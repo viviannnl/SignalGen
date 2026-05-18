@@ -30,16 +30,20 @@ SignalGen is designed to work with **your product repo**. The MVP should start w
 ## Project docs
 
 - [User flow overview](docs/user-flow.md) — how a founder interacts with SignalGen from screenshot upload to PR/preview/memory.
-- [Technical design](docs/technical-design.md) — how the full system will be built across Next.js, MongoDB, Google Cloud/Gemini, GitHub, and Vercel.
+- [Technical design](docs/technical-design.md) — how the full system will be built across Next.js, MongoDB, Gemini Enterprise Agent Platform / ADK TypeScript, GitHub, and Vercel.
+- [ADK TypeScript agent](agent/README.md) — local setup for the code-first SignalGen agent skeleton.
 
 ## Tech stack
 
 - Next.js
 - TypeScript
 - Tailwind CSS
-- Google Cloud / Gemini / Agent Builder
-- Google Cloud Vision OCR
+- Google ADK TypeScript
+- Gemini Enterprise Agent Platform / Agent Engine
+- Gemini API
+- Google Cloud Vision OCR or Gemini multimodal extraction
 - MongoDB Atlas
+- MongoDB MCP memory integration (planned)
 - GitHub PR automation
 - Vercel previews
 
@@ -52,13 +56,32 @@ npm run dev
 
 Open http://localhost:3000.
 
-## Environment variables
-
-These will be added as the integrations are built:
+## Agent development
 
 ```bash
-MONGODB_URI=
-GOOGLE_CLOUD_PROJECT=signalgen-496700
-GITHUB_TOKEN=
-TARGET_REPO=your-org/your-product-repo
+cd agent
+cp .env.example .env
+# Fill GEMINI_API_KEY and MONGODB_URI locally. Do not commit .env.
+npm install
+npm run typecheck
+npm test
 ```
+
+The ADK TypeScript API-key setup should follow the official docs:
+
+https://adk.dev/get-started/typescript/#set-your-api-key
+
+## Environment variables
+
+Use `.env.local` for the Next.js app and `agent/.env` for the local ADK agent. Never commit real secret values.
+
+| Variable | Purpose |
+| --- | --- |
+| `MONGODB_URI` | MongoDB Atlas connection string for product memory |
+| `GOOGLE_CLOUD_PROJECT` | Google Cloud project identifier |
+| `GEMINI_API_KEY` | Gemini API key for local ADK TypeScript development |
+| `GITHUB_TOKEN` | Server-side GitHub access for approved PR automation |
+| `TARGET_REPO_OWNER` | Owner/org of the configured product repo |
+| `TARGET_REPO_NAME` | Name of the configured product repo |
+| `VERCEL_TOKEN` | Server-side Vercel API access for preview lookup |
+| `AGENT_TICK_SECRET` | Shared secret for future `/api/agent/tick` calls |

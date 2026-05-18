@@ -1,0 +1,32 @@
+{
+  "name": "signalgen-agent",
+  "version": "0.1.0",
+  "description": "Code-first Google ADK TypeScript agent for SignalGen.",
+  "main": "src/agent.ts",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "adk run src/agent.ts",
+    "web": "adk web"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@google/adk": "^1.1.0",
+    "dotenv": "^17.4.2",
+    "mongodb": "^7.2.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@google/adk-devtools": "^1.1.0",
+    "@types/node": "^25.8.0",
+    "tsx": "^4.22.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}
