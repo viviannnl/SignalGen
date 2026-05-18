@@ -35,8 +35,42 @@ function makeRun(overrides: Partial<SignalGenRun> = {}): SignalGenRun {
 }
 
 describe("processAgentTick", () => {
-  it("processes pending uploaded runs and persists agent analysis", async () => {
+  it("processes pending uploaded runs through the integrated ADK agent runtime and persists analysis", async () => {
     const updatedRuns: SignalGenRun[] = [];
+    const agentRuntime = {
+      kind: "adk" as const,
+      analyzeRun: vi.fn(async (run: SignalGenRun) => ({
+        status: "plan_ready" as const,
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        processedAt: "2026-01-01T00:01:00.000Z",
+        signalClusters: [
+          {
+            id: "feature_request-3",
+            type: "feature_request" as const,
+            title: "Repeated feature request detected",
+            summary: "3 related comments classified as feature request.",
+            evidenceCommentIds: ["comment-1", "comment-2", "comment-3"],
+            severity: "medium" as const,
+            frequency: 3,
+            confidence: 0.91,
+            decision: "propose_plan" as const,
+            rationale: "Evidence is strong enough to draft a plan.",
+          },
+        ],
+        signal: {
+          title: "Repeated feature request detected",
+          summary: "3 related comments classified as feature request.",
+          confidence: 0.91,
+          evidence: run.comments,
+        },
+        plan: {
+          recommendedChange: "Draft a product improvement.",
+          filesToChange: ["Product UI/content file to be selected after founder approval"],
+          guardrails: ["No code changes before founder approval."],
+          acceptanceCriteria: ["Plan cites evidence."],
+        },
+      })),
+    };
     const store: AgentTickStore = {
       listPendingRuns: vi.fn(async () => [makeRun()]),
       updateRunAnalysis: vi.fn(async (runId, update) => {
@@ -45,12 +79,14 @@ describe("processAgentTick", () => {
       }),
     };
 
-    const result = await processAgentTick(store, { limit: 5 });
+    const result = await processAgentTick(store, { limit: 5, agentRuntime });
 
     expect(result.ok).toBe(true);
+    expect(result.runtime).toBe("adk");
     expect(result.processedCount).toBe(1);
     expect(result.processedRunIds).toEqual(["run-1"]);
     expect(store.listPendingRuns).toHaveBeenCalledWith(5, undefined);
+    expect(agentRuntime.analyzeRun).toHaveBeenCalledWith(makeRun());
     expect(store.updateRunAnalysis).toHaveBeenCalledOnce();
     expect(updatedRuns[0].status).toBe("plan_ready");
     expect(updatedRuns[0].signal.title).toBe("Repeated feature request detected");
@@ -93,7 +129,7 @@ describe("processAgentTick", () => {
 
     const result = await processAgentTick(store);
 
-    expect(result).toEqual({ ok: true, processedCount: 0, processedRunIds: [] });
+    expect(result).toEqual({ ok: true, runtime: "adk", processedCount: 0, processedRunIds: [] });
     expect(store.updateRunAnalysis).not.toHaveBeenCalled();
   });
 
