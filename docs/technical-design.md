@@ -4,7 +4,7 @@
 
 **Audience:** Developers, hackathon reviewers, and future AI coding agents implementing the next milestones.
 
-**Product summary:** SignalGen turns customer feedback screenshots into safe, reviewable product PRs for your product, while MongoDB stores the memory layer of the founder's product iteration loop.
+**Product summary:** SignalGen is a code-first Google ADK / Agent Engine product-iteration agent that watches feedback from your social media and customer channels, decides when repeated bugs or feature requests have enough evidence to act, proposes safe product improvements, and stores the full loop in MongoDB as the memory layer of the founder's product iteration loop.
 
 ---
 
@@ -52,24 +52,164 @@ SignalGen dashboard on Vercel
   ↓
 Next.js API routes / server actions
   ↓
-MongoDB Atlas memory layer
+Agent trigger layer
+  ├─ upload-triggered: process a run immediately after screenshots arrive
+  └─ periodic: Cloud Scheduler calls /api/agent/tick to process pending feedback
   ↓
-Google Cloud OCR / Gemini / Agent Builder
+Code-first Google ADK agent deployed on Agent Engine
   ↓
-GitHub API or GitHub App
+Agent tools
+  ├─ screenshot/comment extraction tool
+  ├─ feedback classification + clustering tool
+  ├─ evidence threshold decision tool
+  ├─ MongoDB MCP memory tool
+  ├─ approval-state tool
+  ├─ GitHub PR tool
+  └─ Vercel preview lookup tool
   ↓
-Product repo branch + PR
-  ↓
-Vercel preview deployment
+MongoDB Atlas memory layer + product repo PR + Vercel preview
   ↓
 SignalGen dashboard status updates
 ```
 
-SignalGen should treat the dashboard as the control plane and MongoDB as the source of truth for each product iteration run.
+SignalGen should treat the dashboard as the control plane and MongoDB as the source of truth for each product iteration run. The dashboard is **not** the agent. The agent is the code-first Google ADK/Agent Engine worker that observes pending feedback, decides what to do next, uses tools, and records the result.
+
+SignalGen should not require the founder to write a prompt such as “analyze these screenshots.” The default interaction is event-driven: the founder uploads screenshots or connects a feedback source, and the agent knows to evaluate whether the feedback contains enough repeated evidence to justify a bug fix or feature proposal.
 
 ---
 
-## 3. Core data model
+## 3. Google ADK / Agent Engine setup strategy
+
+Chosen approach: **Option B — code-first agent with Google Agent Development Kit (ADK) and Agent Engine**.
+
+This means SignalGen should be built primarily **in code and CLI**, not only through a low-code web UI. The Google Cloud Console is still used for project setup, API enablement, service accounts, Secret Manager, and checking deployed resources, but the agent itself should live in the repo as versioned code.
+
+### Why code-first
+
+Code-first is the best fit because SignalGen needs:
+
+- A custom dashboard and approval workflow.
+- Event-driven and periodic processing instead of only chat sessions.
+- Real tool calls to MongoDB MCP, GitHub, Vercel, and SignalGen APIs.
+- Guardrails that are testable and reviewable in GitHub.
+- A clear demo story where the agent acts on pending feedback without the founder prompting every step.
+
+### Setup surfaces
+
+| Setup surface | What it is used for |
+| --- | --- |
+| Google Cloud Console / UI | Create project, enable billing/APIs, inspect Agent Engine, manage IAM, inspect logs, configure Secret Manager values if needed |
+| `gcloud` CLI | Authenticate locally, set project, enable APIs, deploy services/agents, inspect logs |
+| Repo code | Define the ADK agent, tools, prompts/instructions, guardrails, tests, and deployment config |
+| SignalGen dashboard | Upload feedback, show agent decisions, approve plans, and display PR/preview/history |
+
+### Beginner-friendly setup order
+
+1. In Google Cloud Console, confirm project `signalgen-496700` is selected.
+2. Confirm billing/free credits are active and set a budget alert.
+3. Enable the required APIs:
+   - Vertex AI API / Gemini API
+   - Agent Engine / Gemini Enterprise Agent Platform APIs available in the project
+   - Cloud Run API, if we deploy an agent worker or API bridge there
+   - Cloud Scheduler API, if we run periodic checks
+   - Secret Manager API, if we store tokens in Google Cloud
+   - Cloud Storage API, if screenshots are stored in Google Cloud Storage
+4. Locally, authenticate with `gcloud` and set the project:
+
+   ```bash
+   gcloud auth login
+   gcloud config set project signalgen-496700
+   gcloud auth application-default login
+   ```
+
+5. Add an `agent/` package in this repo for the code-first ADK agent.
+6. Define the agent instructions and tools in code.
+7. Run the agent locally against a test run.
+8. Deploy the agent to Agent Engine or a Cloud Run bridge, depending on the final ADK deployment path.
+9. Add `/api/agent/tick` in the Next.js app so the dashboard, upload event, or Cloud Scheduler can trigger the agent.
+10. Connect Cloud Scheduler to call `/api/agent/tick` periodically.
+
+### Planned repo structure
+
+```text
+agent/
+  signalgen_agent/
+    __init__.py
+    agent.py              # ADK agent definition and instructions
+    tools/
+      runs.py             # list/get/update SignalGen runs
+      extraction.py       # screenshot/comment extraction
+      signals.py          # classify, cluster, score evidence
+      memory_mcp.py       # MongoDB MCP memory operations
+      github.py           # branch/PR actions after approval
+      vercel.py           # preview lookup
+    schemas.py            # Pydantic models for structured agent outputs
+  tests/
+    test_signal_scoring.py
+    test_guardrails.py
+```
+
+The exact package names can change during implementation, but the principle should remain: the agent and its tools are source-controlled, testable code.
+
+### How the dashboard invokes the agent
+
+The dashboard and API should not contain all the intelligence. They should create runs and trigger the agent.
+
+Suggested route:
+
+```text
+POST /api/agent/tick
+```
+
+Purpose:
+
+```text
+Tell the code-first agent to inspect pending runs, advance each run by one safe step, and write updated state back to MongoDB.
+```
+
+Trigger sources:
+
+- Immediately after a founder uploads screenshots.
+- Manually from an admin/dashboard button for demos.
+- Periodically through Cloud Scheduler.
+
+### Agent Engine role
+
+Agent Engine should host/scale the code-first agent runtime. Its job is to run the agent loop and tool calls, not to replace the SignalGen dashboard.
+
+Agent Engine responsibilities:
+
+- Run the ADK agent.
+- Use Gemini models for reasoning and multimodal understanding.
+- Orchestrate tool calls.
+- Keep agent instructions and execution observable through Google Cloud.
+- Scale beyond local development when the workflow is deployed.
+
+### Google Cloud Console role
+
+Use the web UI for setup and inspection, not as the source of truth for the agent logic:
+
+- Enable APIs.
+- Check billing/budget.
+- Review Agent Engine deployments.
+- Review Cloud Run / Cloud Scheduler / logs.
+- Manage service accounts and IAM.
+- Optionally manage secrets in Secret Manager.
+
+### MVP deployment decision
+
+For the first working integration, use the simplest deployable path:
+
+1. Build the ADK agent locally in `agent/`.
+2. Trigger it from `/api/agent/tick` or a local script.
+3. Once local behavior works, deploy to Agent Engine if the ADK deployment flow is stable in the project.
+4. If Agent Engine deployment is blocked, deploy a thin Cloud Run worker that runs the ADK agent and still uses Gemini/Google Cloud APIs. Document the fallback clearly.
+
+The hackathon story should still emphasize the code-first Google agent architecture: ADK for agent definition, Gemini for reasoning, Agent Engine or Cloud Run for hosted execution, and MongoDB MCP for memory.
+
+---
+
+## 4. Core data model
 
 ### `runs` collection
 
@@ -84,8 +224,11 @@ type SignalGenRun = {
   status:
     | "uploaded"
     | "ocr_completed"
+    | "signals_clustered"
+    | "insufficient_evidence"
     | "signal_detected"
     | "plan_ready"
+    | "waiting_for_approval"
     | "approved"
     | "branch_created"
     | "changes_committed"
@@ -99,6 +242,7 @@ type SignalGenRun = {
   screenshotNames: string[];
   screenshots?: ScreenshotAsset[];
   extractedComments: ExtractedComment[];
+  signalClusters?: SignalCluster[];
   topSignal?: ProductSignal;
   implementationPlan?: ImplementationPlan;
   approval?: ApprovalDecision;
@@ -162,6 +306,33 @@ type ProductSignal = {
 };
 ```
 
+### Signal cluster
+
+SignalGen should evaluate repeated feedback before proposing a product change.
+
+```ts
+type SignalCluster = {
+  id: string;
+  type: "bug" | "feature_request" | "friction" | "trust_objection" | "pricing" | "praise" | "noise";
+  title: string;
+  summary: string;
+  evidenceCommentIds: string[];
+  severity: "low" | "medium" | "high";
+  frequency: number;
+  confidence: number;
+  decision: "store_only" | "needs_more_evidence" | "propose_plan" | "urgent_review";
+  rationale: string;
+};
+```
+
+Evidence threshold rules should start simple and be visible to the founder:
+
+- Propose a plan when 3+ related comments show the same feature request or friction.
+- Propose a plan when 2+ related comments describe a high-severity bug.
+- Mark `urgent_review` for one severe bug affecting a core workflow.
+- Mark `store_only` for isolated preferences, vague complaints, generic praise, or low-confidence extraction.
+
+
 ### Implementation plan
 
 ```ts
@@ -219,7 +390,7 @@ type VerificationResult = {
 
 ---
 
-## 4. Feature milestones
+## 5. Feature milestones
 
 ### Milestone 1: Foundation — complete
 
@@ -243,7 +414,26 @@ Verification already completed:
 - Production `/api/runs`
 - Production dashboard load
 
-### Milestone 2: Real screenshot upload
+### Milestone 2: Code-first ADK agent skeleton
+
+Goal: Create a versioned Google ADK agent in the repo and connect it to SignalGen's run state.
+
+User flow:
+
+1. Founder uploads screenshots or creates a run.
+2. `/api/agent/tick` triggers the agent.
+3. The agent finds pending runs and advances them by one safe step.
+4. The dashboard shows agent status and decisions.
+
+Implementation tasks:
+
+- Create `agent/` package.
+- Define SignalGen agent instructions.
+- Add tool stubs for listing runs, updating runs, classifying feedback, and writing memory.
+- Add local test fixtures for signal scoring and guardrails.
+- Add a manual local command to run one agent tick.
+
+### Milestone 3: Real screenshot upload
 
 Goal: Store real screenshot files instead of only screenshot names.
 
@@ -280,7 +470,7 @@ POST /api/runs
   creates run with status uploaded
 ```
 
-### Milestone 3: OCR extraction
+### Milestone 4: OCR extraction
 
 Goal: Extract comments from screenshots.
 
@@ -319,9 +509,9 @@ Structured output target:
 }
 ```
 
-### Milestone 4: Signal detection with Gemini
+### Milestone 5: Signal clustering and evidence scoring with Gemini
 
-Goal: Convert extracted comments into the strongest actionable product signal.
+Goal: Convert extracted comments into classified feedback clusters, then decide whether any bug/feature/friction cluster has enough evidence to justify action.
 
 Suggested route:
 
@@ -329,21 +519,23 @@ Suggested route:
 POST /api/runs/:id/detect-signal
 ```
 
-Gemini prompt should ask for:
+Gemini/ADK logic should ask for:
 
-- The strongest repeated concern or opportunity
-- Evidence comment IDs
-- Confidence score
-- Why this matters for the product
-- What product change could address it
+- Comment classification: bug, feature request, friction, trust objection, pricing, praise, or noise.
+- Clusters of repeated comments.
+- Evidence comment IDs for every cluster.
+- Severity, frequency, confidence, and rationale.
+- Decision: `store_only`, `needs_more_evidence`, `propose_plan`, or `urgent_review`.
 
 Important constraints:
 
 - Do not invent evidence.
-- Every signal must cite extracted comments.
-- If comments are too weak, mark `needs_review` instead of forcing a plan.
+- Every signal cluster must cite extracted comments.
+- If evidence is too weak, store the cluster as memory instead of forcing a plan.
+- If a signal is strong enough, create a plan and set status to `plan_ready`.
+- If a possible issue is severe but low-frequency, set status to `needs_review`.
 
-### Milestone 5: Implementation plan generation
+### Milestone 6: Implementation plan generation
 
 Goal: Turn the detected signal into a small, safe product-specific implementation plan.
 
@@ -370,7 +562,7 @@ Example acceptance criteria:
 - No secrets or unrelated files are changed.
 ```
 
-### Milestone 6: Founder approval workflow
+### Milestone 7: Founder approval workflow
 
 Goal: Require explicit approval before repo edits.
 
@@ -402,7 +594,7 @@ Rules:
 - Rejected runs stay stored for memory.
 - Approval should store timestamp and decision note.
 
-### Milestone 7: GitHub PR automation
+### Milestone 8: GitHub PR automation
 
 Goal: Create a branch and PR in the configured product repo after approval.
 
@@ -448,7 +640,7 @@ Security rules:
 - Never commit `.env.local`.
 - Only allow configured repo and branch prefixes.
 
-### Milestone 8: Verification runner
+### Milestone 9: Verification runner
 
 Goal: Run build/tests before PR is considered ready.
 
@@ -469,7 +661,7 @@ Longer-term:
 
 - Add a dedicated worker for deterministic test/build execution.
 
-### Milestone 9: Vercel preview capture
+### Milestone 10: Vercel preview capture
 
 Goal: Display preview URL in SignalGen.
 
@@ -497,9 +689,11 @@ type VercelPreviewInfo = {
 
 ---
 
-## 5. API route plan
+## 6. API route plan
 
 Suggested API routes:
+
+These routes are not meant to replace the agent. The main product path is `/api/agent/tick`, which lets the ADK/Agent Engine worker choose the next safe step. The run-specific routes can be used as internal tools, debug/admin endpoints, or fallback manual endpoints during MVP development.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
@@ -507,6 +701,7 @@ Suggested API routes:
 | `/api/runs` | `GET` | List latest runs |
 | `/api/runs` | `POST` | Create run |
 | `/api/uploads` | `POST` | Upload screenshots |
+| `/api/agent/tick` | `POST` | Trigger the code-first ADK agent to process pending runs |
 | `/api/runs/[id]` | `GET` | Get run details |
 | `/api/runs/[id]/extract-comments` | `POST` | OCR/Gemini extraction |
 | `/api/runs/[id]/detect-signal` | `POST` | Gemini signal detection |
@@ -517,27 +712,66 @@ Suggested API routes:
 
 ---
 
-## 6. Agent behavior design
+## 7. Agent behavior design
 
-SignalGen should behave like an agent, not just a form workflow.
+SignalGen should behave like an event-driven product agent, not a prompt-driven form workflow.
+
+The founder should not need to say, “Analyze these screenshots and propose a safe product improvement.” The normal flow is:
+
+```text
+Founder uploads feedback screenshots or connects a feedback source.
+SignalGen creates a pending run.
+The ADK/Agent Engine agent wakes up immediately or periodically.
+The agent reads all pending comments and decides what, if anything, deserves action.
+```
 
 Agent loop:
 
 ```text
-Observe feedback → reason over signals → propose plan → ask for approval → act through tools → verify → record memory
+Watch feedback → extract comments → classify → cluster → compare with memory → score evidence → decide → plan if warranted → ask approval → act through tools → verify → record memory
 ```
 
 Agent responsibilities:
 
+- Monitor pending runs created by uploads or scheduled checks.
 - Read screenshots/comments.
-- Identify product signals.
-- Explain evidence.
-- Propose small implementation plans.
+- Classify comments into bugs, feature requests, friction, trust objections, pricing concerns, praise, or noise.
+- Cluster related comments across the current run and historical MongoDB memory.
+- Decide whether a cluster has enough evidence to act.
+- Store weak or isolated signals without forcing action.
+- Explain evidence and cite comment IDs.
+- Propose small implementation plans only for sufficiently supported signals.
 - Respect guardrails.
-- Wait for approval.
+- Wait for approval before code or PR actions.
 - Make repo changes only after approval.
 - Run checks or collect check status.
-- Store everything in MongoDB.
+- Store everything in MongoDB memory, preferably through MongoDB MCP for the agent-facing memory layer.
+
+Decision outcomes:
+
+| Decision | Meaning | Status |
+| --- | --- | --- |
+| `store_only` | Feedback is useful memory but not actionable yet | `insufficient_evidence` |
+| `needs_more_evidence` | Pattern exists but is not strong enough | `insufficient_evidence` |
+| `propose_plan` | Evidence is strong enough for a safe product change proposal | `plan_ready` |
+| `urgent_review` | A severe bug may need human review even with limited evidence | `needs_review` |
+
+Core state transitions:
+
+```text
+uploaded
+  → ocr_completed
+  → signals_clustered
+  → insufficient_evidence | needs_review | plan_ready
+  → waiting_for_approval
+  → approved | rejected
+  → branch_created
+  → changes_committed
+  → checks_running
+  → pr_created
+  → preview_ready
+  → merged
+```
 
 Agent non-goals:
 
@@ -546,10 +780,11 @@ Agent non-goals:
 - Do not edit arbitrary repos.
 - Do not scrape risky/private platforms directly for MVP.
 - Do not generate launch posts as a core workflow.
+- Do not create product changes from weak evidence just to look active.
 
 ---
 
-## 7. Guardrails
+## 8. Guardrails
 
 ### Repository guardrails
 
@@ -587,52 +822,57 @@ Expand only after the agent is reliable.
 
 ---
 
-## 8. Environment variables
+## 9. Environment variables
 
 Expected environment variables as features are added:
 
-```bash
-MONGODB_URI=
-GOOGLE_CLOUD_PROJECT=signalgen-496700
-GOOGLE_APPLICATION_CREDENTIALS=
-GEMINI_API_KEY=
-GITHUB_TOKEN=
-TARGET_REPO_OWNER=your-org
-TARGET_REPO_NAME=your-product-repo
-VERCEL_TOKEN=
-VERCEL_TEAM_ID=
-VERCEL_PROJECT_ID=
-```
+| Variable | Purpose |
+| --- | --- |
+| `MONGODB_URI` | MongoDB Atlas connection string for product memory |
+| `GOOGLE_CLOUD_PROJECT` | Google Cloud project ID, currently `signalgen-496700` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Local Google application credentials, if needed for local development |
+| `GEMINI_API_KEY` | Gemini API access, if using API-key based local development |
+| `GITHUB_TOKEN` | Server-side GitHub access for approved PR automation |
+| `TARGET_REPO_OWNER` | Owner/org of the configured product repo |
+| `TARGET_REPO_NAME` | Name of the configured product repo |
+| `VERCEL_TOKEN` | Server-side Vercel API access for preview lookup |
+| `VERCEL_TEAM_ID` | Optional Vercel team identifier |
+| `VERCEL_PROJECT_ID` | Optional Vercel project identifier |
+| `AGENT_TICK_SECRET` | Shared secret used by Cloud Scheduler or internal triggers for `/api/agent/tick` |
+| `GOOGLE_CLOUD_LOCATION` | Google Cloud region, for example `us-central1` |
 
 Notes:
 
 - `MONGODB_URI` is already used.
 - `GOOGLE_CLOUD_PROJECT` is already used by health output.
 - Tokens must only be available server-side.
+- Do not print or commit secret values.
 - For Vercel production, set environment variables in the Vercel project settings and redeploy.
 
 ---
 
-## 9. Suggested implementation order
+## 10. Suggested implementation order
 
 Recommended next build sequence:
 
-1. Add real file upload storage.
-2. Add run detail page or richer dashboard selected-run panel.
-3. Add OCR/Gemini extraction.
-4. Add signal detection.
-5. Add plan generation.
-6. Add approve/reject workflow.
-7. Add GitHub PR automation for one narrow allowed change.
-8. Add Vercel preview capture.
-9. Add run status timeline and error visibility.
-10. Polish demo script and judge-facing documentation.
+1. Add the code-first ADK agent skeleton under `agent/`.
+2. Add `/api/agent/tick` so uploads, manual demo buttons, and Cloud Scheduler can trigger the agent loop.
+3. Add signal classification, clustering, and evidence scoring using Gemini.
+4. Add MongoDB MCP memory access for the agent-facing memory layer.
+5. Add real file upload storage.
+6. Add OCR/Gemini multimodal extraction.
+7. Add run detail page or richer dashboard selected-run panel.
+8. Add approve/reject workflow.
+9. Add GitHub PR automation for one narrow allowed change.
+10. Add Vercel preview capture.
+11. Add run status timeline and error visibility.
+12. Polish demo script and judge-facing documentation.
 
-This order keeps the product demo useful at each milestone while avoiding unsafe code automation too early.
+This order proves the agent architecture early: the dashboard creates feedback runs, the code-first Google agent processes them, MongoDB MCP gives memory, and the founder remains in control before any code changes happen.
 
 ---
 
-## 10. Testing and verification strategy
+## 11. Testing and verification strategy
 
 ### Local checks
 
@@ -688,7 +928,7 @@ Add tests for:
 
 ---
 
-## 11. Open technical decisions
+## 12. Open technical decisions
 
 ### Storage provider
 
@@ -704,13 +944,16 @@ Recommendation: use the Google Cloud-native path if the hackathon expects Google
 
 ### Agent execution environment
 
-Decision needed: run repo automation inside Vercel serverless routes, GitHub Actions, or a separate worker.
+Decision: use a **code-first Google ADK agent**, then deploy it to **Agent Engine** when ready.
 
-Recommendation:
+Implementation guidance:
 
-- Vercel serverless is fine for short API calls.
-- GitHub Actions or a separate worker is better for longer code edits/builds.
-- For safety, keep the first PR automation very narrow.
+- Define agent logic and tools in the repo under `agent/`.
+- Use local CLI workflows for development and tests.
+- Use Google Cloud Console for API enablement, IAM, logs, and deployment inspection.
+- Use Agent Engine for hosted execution if available/stable for the project.
+- Use Cloud Run as a fallback worker if Agent Engine deployment blocks the MVP.
+- Keep repo-changing actions behind founder approval.
 
 ### Authentication
 
@@ -718,15 +961,18 @@ MVP may be single-user without full auth. Before wider use, add authentication s
 
 ---
 
-## 12. Success criteria for the hackathon MVP
+## 13. Success criteria for the hackathon MVP
 
 A strong MVP should demonstrate:
 
-- Founder uploads feedback screenshots.
+- Founder uploads feedback screenshots or leaves uploaded feedback for the periodic agent loop.
+- Code-first Google ADK / Agent Engine agent processes pending feedback without needing a manual analysis prompt.
 - SignalGen extracts real comments.
-- Gemini identifies a real product signal with evidence.
-- SignalGen generates a safe implementation plan.
-- Founder approves the plan.
+- Gemini classifies and clusters bugs, feature requests, and friction points.
+- Agent decides whether the evidence is strong enough to act.
+- MongoDB MCP provides the agent-facing product memory layer.
+- SignalGen generates a safe implementation plan only when evidence is strong enough.
+- Founder approves the plan before code actions.
 - SignalGen creates a GitHub PR for your product repo.
 - Vercel preview is linked.
 - MongoDB stores the full loop as durable product memory.
