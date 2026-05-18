@@ -10,7 +10,7 @@ It turns customer feedback screenshots into safe, reviewable product PRs.
 
 Built for the **Google Cloud Rapid Agent Hackathon**.
 
-## Product workflow
+## Target product workflow
 
 1. Founder uploads screenshots of social comments or user feedback.
 2. OCR extracts comments from screenshots.
@@ -23,12 +23,14 @@ Built for the **Google Cloud Rapid Agent Hackathon**.
 9. MongoDB stores the full feedback-to-decision-to-PR chain as the memory layer of the founder’s product iteration loop.
 10. The dashboard shows run history, evidence, PRs, previews, and founder decisions.
 
-## Initial target product
+## Target product
 
-SignalGen will use **LetterGen** as the first demo target repo:
+SignalGen is designed to work with **your product repo**. The MVP should start with one configured product repository and expand only after the guardrails are reliable.
 
-- Production: https://www.lettergen.io
-- GitHub: https://github.com/viviannnl/ai-cover-letter
+## Project docs
+
+- [User flow overview](docs/user-flow.md) — how a founder interacts with SignalGen from screenshot upload to PR/preview/memory.
+- [Technical design](docs/technical-design.md) — how the full system will be built across Next.js, MongoDB, Google Cloud/Gemini, GitHub, and Vercel.
 
 ## Tech stack
 
@@ -58,5 +60,5 @@ These will be added as the integrations are built:
 MONGODB_URI=
 GOOGLE_CLOUD_PROJECT=signalgen-496700
 GITHUB_TOKEN=
-TARGET_REPO=viviannnl/ai-cover-letter
+TARGET_REPO=your-org/your-product-repo
 ```
