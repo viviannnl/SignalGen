@@ -13,7 +13,7 @@ const workflow = [
   },
   {
     title: "Create a safe PR",
-    copy: "The agent edits LetterGen on a branch, runs the build, opens a GitHub PR, and links the Vercel preview.",
+    copy: "The agent edits your product repo on a branch, runs the build, opens a GitHub PR, and links the Vercel preview.",
   },
 ];
 
@@ -53,8 +53,7 @@ export default function Home() {
                 From customer signal to product PR.
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-slate-300">
-                SignalGen is an AI product-iteration agent that turns feedback screenshots into safe,
-                reviewable product changes for founder-led products like LetterGen.
+                SignalGen is an AI product-iteration agent that turns feedback screenshots into safe, reviewable product changes — keeping founders in control of every step.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
