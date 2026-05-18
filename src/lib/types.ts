@@ -3,6 +3,7 @@ export type SignalGenRunStatus =
   | "signal_detected"
   | "plan_ready"
   | "approved"
+  | "rejected"
   | "pr_created"
   | "needs_review"
   | "insufficient_evidence";
@@ -12,6 +13,15 @@ export type SignalType = "bug" | "feature_request" | "friction" | "trust_objecti
 export type SignalSeverity = "low" | "medium" | "high";
 
 export type SignalDecision = "store_only" | "needs_more_evidence" | "propose_plan" | "urgent_review";
+
+export type FounderDecisionAction = "approve" | "reject";
+
+export type FounderDecisionRecord = {
+  action: FounderDecisionAction;
+  note: string;
+  decidedAt: string;
+  decidedBy: string;
+};
 
 export type SignalCluster = {
   id: string;
@@ -48,6 +58,7 @@ export type SignalGenRun = {
     guardrails: string[];
     acceptanceCriteria: string[];
   };
+  founderDecision?: FounderDecisionRecord;
   pr?: {
     url?: string;
     previewUrl?: string;

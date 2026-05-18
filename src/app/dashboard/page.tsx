@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [decidingRunId, setDecidingRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const latestRun = runs[0];
@@ -77,6 +78,39 @@ export default function DashboardPage() {
     } finally {
       setIsCreating(false);
       setIsProcessing(false);
+    }
+  }
+
+  async function decideRun(runId: string, action: "approve" | "reject") {
+    const note = window.prompt(
+      action === "approve"
+        ? "Optional approval note for the agent before future PR work:"
+        : "Optional rejection note so SignalGen remembers why this was rejected:",
+      "",
+    );
+
+    if (note === null) return;
+
+    setDecidingRunId(runId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/runs/${runId}/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, note }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not save founder decision.");
+      }
+
+      await loadRuns();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
+    } finally {
+      setDecidingRunId(null);
     }
   }
 
@@ -212,6 +246,8 @@ export default function DashboardPage() {
                   <p className="text-sm text-slate-400">Recommended product change</p>
                   <p className="mt-2 text-slate-100">{latestRun.plan.recommendedChange}</p>
                 </div>
+
+                <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={decideRun} />
               </div>
             ) : (
               <p className="mt-5 text-slate-300">No runs yet. Create the first SignalGen run.</p>
@@ -238,8 +274,31 @@ export default function DashboardPage() {
                       <p className="mt-1 text-xs text-slate-400">{new Date(run.createdAt).toLocaleString()}</p>
                     </div>
                     <p className="text-sm text-slate-300">{run.plan.recommendedChange}</p>
-                    <div className="flex justify-start md:justify-end">
+                    <div className="flex flex-col items-start gap-2 md:items-end">
                       <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{run.status}</span>
+                      {run.founderDecision ? (
+                        <span className="text-xs text-slate-400">
+                          Founder {run.founderDecision.action === "approve" ? "approved" : "rejected"} · {new Date(run.founderDecision.decidedAt).toLocaleString()}
+                        </span>
+                      ) : null}
+                      {!run.founderDecision && run.status === "plan_ready" ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => void decideRun(run._id, "approve")}
+                            disabled={decidingRunId === run._id}
+                            className="rounded-full bg-emerald-300/90 px-3 py-1 text-xs font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => void decideRun(run._id, "reject")}
+                            disabled={decidingRunId === run._id}
+                            className="rounded-full border border-red-300/40 px-3 py-1 text-xs font-semibold text-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -251,6 +310,67 @@ export default function DashboardPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function FounderDecisionPanel({
+  run,
+  decidingRunId,
+  onDecide,
+}: {
+  run: ApiRun;
+  decidingRunId: string | null;
+  onDecide: (runId: string, action: "approve" | "reject") => Promise<void>;
+}) {
+  if (run.founderDecision) {
+    return (
+      <div className="rounded-3xl border border-emerald-300/20 bg-emerald-300/10 p-5">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-200">Founder decision</p>
+        <p className="mt-3 text-lg font-semibold text-white">
+          {run.founderDecision.action === "approve" ? "Approved" : "Rejected"}
+        </p>
+        <p className="mt-2 text-sm text-slate-300">{new Date(run.founderDecision.decidedAt).toLocaleString()}</p>
+        {run.founderDecision.note ? <p className="mt-3 text-sm text-slate-200">“{run.founderDecision.note}”</p> : null}
+      </div>
+    );
+  }
+
+  if (run.status !== "plan_ready") {
+    return (
+      <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+        <p className="text-sm font-semibold text-white">Founder approval gate</p>
+        <p className="mt-2 text-sm leading-6 text-slate-300">
+          Approval controls appear once the agent has enough evidence and marks a run as plan-ready.
+        </p>
+      </div>
+    );
+  }
+
+  const isDeciding = decidingRunId === run._id;
+
+  return (
+    <div className="rounded-3xl border border-amber-300/25 bg-amber-300/10 p-5">
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-200">Founder approval required</p>
+      <p className="mt-3 text-sm leading-6 text-slate-200">
+        SignalGen found enough evidence to propose a plan. Approving only records your decision for the next PR step; it does not edit code yet.
+      </p>
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+        <button
+          onClick={() => void onDecide(run._id, "approve")}
+          disabled={isDeciding}
+          className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isDeciding ? "Saving..." : "Approve plan"}
+        </button>
+        <button
+          onClick={() => void onDecide(run._id, "reject")}
+          disabled={isDeciding}
+          className="rounded-full border border-red-300/40 px-5 py-3 text-sm font-semibold text-red-100 transition hover:border-red-200 hover:text-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Reject plan
+        </button>
+      </div>
+    </div>
   );
 }
 
