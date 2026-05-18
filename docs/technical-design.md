@@ -4,7 +4,7 @@
 
 **Audience:** Developers, hackathon reviewers, and future AI coding agents implementing the next milestones.
 
-**Product summary:** SignalGen is a code-first Google ADK / Agent Engine product-iteration agent that watches feedback from your social media and customer channels, decides when repeated bugs or feature requests have enough evidence to act, proposes safe product improvements, and stores the full loop in MongoDB as the memory layer of the founder's product iteration loop.
+**Product summary:** SignalGen is a code-first Google ADK TypeScript / Gemini Enterprise Agent Platform product-iteration agent that watches feedback from your social media and customer channels, decides when repeated bugs or feature requests have enough evidence to act, proposes safe product improvements, and stores the full loop in MongoDB as the memory layer of the founder's product iteration loop.
 
 ---
 
@@ -56,7 +56,7 @@ Agent trigger layer
   ├─ upload-triggered: process a run immediately after screenshots arrive
   └─ periodic: Cloud Scheduler calls /api/agent/tick to process pending feedback
   ↓
-Code-first Google ADK agent deployed on Agent Engine
+Code-first Google ADK TypeScript agent deployed on Gemini Enterprise Agent Platform / Agent Engine
   ↓
 Agent tools
   ├─ screenshot/comment extraction tool
@@ -72,15 +72,15 @@ MongoDB Atlas memory layer + product repo PR + Vercel preview
 SignalGen dashboard status updates
 ```
 
-SignalGen should treat the dashboard as the control plane and MongoDB as the source of truth for each product iteration run. The dashboard is **not** the agent. The agent is the code-first Google ADK/Agent Engine worker that observes pending feedback, decides what to do next, uses tools, and records the result.
+SignalGen should treat the dashboard as the control plane and MongoDB as the source of truth for each product iteration run. The dashboard is **not** the agent. The agent is the code-first Google ADK TypeScript / Gemini Enterprise Agent Platform worker that observes pending feedback, decides what to do next, uses tools, and records the result.
 
 SignalGen should not require the founder to write a prompt such as “analyze these screenshots.” The default interaction is event-driven: the founder uploads screenshots or connects a feedback source, and the agent knows to evaluate whether the feedback contains enough repeated evidence to justify a bug fix or feature proposal.
 
 ---
 
-## 3. Google ADK / Agent Engine setup strategy
+## 3. Google ADK TypeScript / Gemini Enterprise Agent Platform setup strategy
 
-Chosen approach: **Option B — code-first agent with Google Agent Development Kit (ADK) and Agent Engine**.
+Chosen approach: **Option B — code-first agent with Google Agent Development Kit (ADK) TypeScript and Gemini Enterprise Agent Platform / Agent Engine**.
 
 This means SignalGen should be built primarily **in code and CLI**, not only through a low-code web UI. The Google Cloud Console is still used for project setup, API enablement, service accounts, Secret Manager, and checking deployed resources, but the agent itself should live in the repo as versioned code.
 
@@ -107,14 +107,15 @@ Code-first is the best fit because SignalGen needs:
 
 1. In Google Cloud Console, confirm project `signalgen-496700` is selected.
 2. Confirm billing/free credits are active and set a budget alert.
-3. Enable the required APIs:
-   - Vertex AI API / Gemini API
-   - Agent Engine / Gemini Enterprise Agent Platform APIs available in the project
+3. Follow the current Gemini Enterprise Agent Platform documentation for Google Cloud setup. Do **not** assume old Vertex AI API setup instructions are current.
+4. Enable only the currently documented services needed for the chosen path, likely including:
+   - Gemini Enterprise Agent Platform / Agent Engine services available in the project
    - Cloud Run API, if we deploy an agent worker or API bridge there
    - Cloud Scheduler API, if we run periodic checks
    - Secret Manager API, if we store tokens in Google Cloud
    - Cloud Storage API, if screenshots are stored in Google Cloud Storage
-4. Locally, authenticate with `gcloud` and set the project:
+5. For local ADK TypeScript development, follow the official ADK TypeScript quickstart and API-key setup: <https://adk.dev/get-started/typescript/#set-your-api-key>. The current ADK TypeScript quickstart uses `GEMINI_API_KEY` in the agent `.env` file, created from Google AI Studio.
+6. Locally, authenticate with `gcloud` and set the project for Google Cloud deployment/inspection:
 
    ```bash
    gcloud auth login
@@ -122,34 +123,36 @@ Code-first is the best fit because SignalGen needs:
    gcloud auth application-default login
    ```
 
-5. Add an `agent/` package in this repo for the code-first ADK agent.
-6. Define the agent instructions and tools in code.
-7. Run the agent locally against a test run.
-8. Deploy the agent to Agent Engine or a Cloud Run bridge, depending on the final ADK deployment path.
-9. Add `/api/agent/tick` in the Next.js app so the dashboard, upload event, or Cloud Scheduler can trigger the agent.
-10. Connect Cloud Scheduler to call `/api/agent/tick` periodically.
+7. Add an `agent/` package in this repo for the code-first ADK TypeScript agent.
+8. Define the agent instructions and tools in TypeScript code.
+9. Run the agent locally against a test run with ADK devtools.
+10. Deploy the agent to Gemini Enterprise Agent Platform / Agent Engine or a Cloud Run bridge, depending on the final documented ADK deployment path.
+11. Add `/api/agent/tick` in the Next.js app so the dashboard, upload event, or Cloud Scheduler can trigger the agent.
+12. Connect Cloud Scheduler to call `/api/agent/tick` periodically.
 
 ### Planned repo structure
 
 ```text
 agent/
-  signalgen_agent/
-    __init__.py
-    agent.py              # ADK agent definition and instructions
+  package.json             # ADK TypeScript package config
+  tsconfig.json
+  .env.example             # documents GEMINI_API_KEY without storing the real value
+  src/
+    agent.ts               # ADK LlmAgent definition and instructions
+    schemas.ts             # structured output types/schemas
     tools/
-      runs.py             # list/get/update SignalGen runs
-      extraction.py       # screenshot/comment extraction
-      signals.py          # classify, cluster, score evidence
-      memory_mcp.py       # MongoDB MCP memory operations
-      github.py           # branch/PR actions after approval
-      vercel.py           # preview lookup
-    schemas.py            # Pydantic models for structured agent outputs
+      runs.ts              # list/get/update SignalGen runs
+      extraction.ts        # screenshot/comment extraction
+      signals.ts           # classify, cluster, score evidence
+      memoryMcp.ts         # MongoDB MCP memory operations
+      github.ts            # branch/PR actions after approval
+      vercel.ts            # preview lookup
   tests/
-    test_signal_scoring.py
-    test_guardrails.py
+    signalScoring.test.ts
+    guardrails.test.ts
 ```
 
-The exact package names can change during implementation, but the principle should remain: the agent and its tools are source-controlled, testable code.
+The exact package names can change during implementation, but the principle should remain: the agent and its tools are source-controlled, testable TypeScript code. ADK setup should follow the official TypeScript docs, including `npm install @google/adk`, `npm install -D @google/adk-devtools`, and a local agent `.env` with `GEMINI_API_KEY` for Gemini API access.
 
 ### How the dashboard invokes the agent
 
@@ -173,9 +176,9 @@ Trigger sources:
 - Manually from an admin/dashboard button for demos.
 - Periodically through Cloud Scheduler.
 
-### Agent Engine role
+### Gemini Enterprise Agent Platform / Agent Engine role
 
-Agent Engine should host/scale the code-first agent runtime. Its job is to run the agent loop and tool calls, not to replace the SignalGen dashboard.
+Gemini Enterprise Agent Platform / Agent Engine should host/scale the code-first agent runtime. Its job is to run the agent loop and tool calls, not to replace the SignalGen dashboard.
 
 Agent Engine responsibilities:
 
@@ -200,12 +203,12 @@ Use the web UI for setup and inspection, not as the source of truth for the agen
 
 For the first working integration, use the simplest deployable path:
 
-1. Build the ADK agent locally in `agent/`.
+1. Build the ADK TypeScript agent locally in `agent/`.
 2. Trigger it from `/api/agent/tick` or a local script.
-3. Once local behavior works, deploy to Agent Engine if the ADK deployment flow is stable in the project.
-4. If Agent Engine deployment is blocked, deploy a thin Cloud Run worker that runs the ADK agent and still uses Gemini/Google Cloud APIs. Document the fallback clearly.
+3. Once local behavior works, deploy to Gemini Enterprise Agent Platform / Agent Engine if the ADK deployment flow is stable in the project.
+4. If Agent Engine deployment is blocked, deploy a thin Cloud Run worker that runs the ADK TypeScript agent and still uses Gemini APIs / Google Cloud services. Document the fallback clearly.
 
-The hackathon story should still emphasize the code-first Google agent architecture: ADK for agent definition, Gemini for reasoning, Agent Engine or Cloud Run for hosted execution, and MongoDB MCP for memory.
+The hackathon story should still emphasize the code-first Google agent architecture: ADK TypeScript for agent definition, Gemini for reasoning, Gemini Enterprise Agent Platform / Agent Engine or Cloud Run for hosted execution, and MongoDB MCP for memory.
 
 ---
 
@@ -414,9 +417,9 @@ Verification already completed:
 - Production `/api/runs`
 - Production dashboard load
 
-### Milestone 2: Code-first ADK agent skeleton
+### Milestone 2: Code-first ADK TypeScript agent skeleton
 
-Goal: Create a versioned Google ADK agent in the repo and connect it to SignalGen's run state.
+Goal: Create a versioned Google ADK TypeScript agent in the repo and connect it to SignalGen's run state.
 
 User flow:
 
@@ -693,7 +696,7 @@ type VercelPreviewInfo = {
 
 Suggested API routes:
 
-These routes are not meant to replace the agent. The main product path is `/api/agent/tick`, which lets the ADK/Agent Engine worker choose the next safe step. The run-specific routes can be used as internal tools, debug/admin endpoints, or fallback manual endpoints during MVP development.
+These routes are not meant to replace the agent. The main product path is `/api/agent/tick`, which lets the ADK TypeScript / Gemini Enterprise Agent Platform worker choose the next safe step. The run-specific routes can be used as internal tools, debug/admin endpoints, or fallback manual endpoints during MVP development.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
@@ -721,7 +724,7 @@ The founder should not need to say, “Analyze these screenshots and propose a s
 ```text
 Founder uploads feedback screenshots or connects a feedback source.
 SignalGen creates a pending run.
-The ADK/Agent Engine agent wakes up immediately or periodically.
+The ADK TypeScript / Gemini Enterprise Agent Platform agent wakes up immediately or periodically.
 The agent reads all pending comments and decides what, if anything, deserves action.
 ```
 
@@ -829,9 +832,9 @@ Expected environment variables as features are added:
 | Variable | Purpose |
 | --- | --- |
 | `MONGODB_URI` | MongoDB Atlas connection string for product memory |
-| `GOOGLE_CLOUD_PROJECT` | Google Cloud project ID, currently `signalgen-496700` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Local Google application credentials, if needed for local development |
-| `GEMINI_API_KEY` | Gemini API access, if using API-key based local development |
+| `GOOGLE_CLOUD_PROJECT` | Google Cloud project ID, currently `signalgen-496700`, used for deployment/inspection |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Local Google application credentials only if required by the current Gemini Enterprise Agent Platform deployment path |
+| `GEMINI_API_KEY` | Gemini API access for ADK TypeScript local development; follow the official ADK TypeScript API-key setup docs |
 | `GITHUB_TOKEN` | Server-side GitHub access for approved PR automation |
 | `TARGET_REPO_OWNER` | Owner/org of the configured product repo |
 | `TARGET_REPO_NAME` | Name of the configured product repo |
@@ -938,13 +941,13 @@ Recommendation: choose based on hackathon scoring and setup speed. If Google Clo
 
 ### Gemini integration style
 
-Decision needed: direct Gemini API vs Google Cloud Vertex AI Gemini.
+Decision: use the current ADK TypeScript + Gemini API path documented by ADK for local development, and follow Gemini Enterprise Agent Platform documentation for Google Cloud deployment. Do **not** use outdated Vertex AI API setup instructions as the source of truth.
 
-Recommendation: use the Google Cloud-native path if the hackathon expects Google Cloud integration depth.
+Recommendation: keep the model/provider setup small for MVP: `GEMINI_API_KEY` for local ADK TypeScript development, then only add Google Cloud service-account or platform-specific deployment configuration when required by the current Gemini Enterprise Agent Platform docs.
 
 ### Agent execution environment
 
-Decision: use a **code-first Google ADK agent**, then deploy it to **Agent Engine** when ready.
+Decision: use a **code-first Google ADK TypeScript agent**, then deploy it to **Gemini Enterprise Agent Platform / Agent Engine** when ready.
 
 Implementation guidance:
 
@@ -966,7 +969,7 @@ MVP may be single-user without full auth. Before wider use, add authentication s
 A strong MVP should demonstrate:
 
 - Founder uploads feedback screenshots or leaves uploaded feedback for the periodic agent loop.
-- Code-first Google ADK / Agent Engine agent processes pending feedback without needing a manual analysis prompt.
+- Code-first Google ADK TypeScript / Gemini Enterprise Agent Platform agent processes pending feedback without needing a manual analysis prompt.
 - SignalGen extracts real comments.
 - Gemini classifies and clusters bugs, feature requests, and friction points.
 - Agent decides whether the evidence is strong enough to act.
