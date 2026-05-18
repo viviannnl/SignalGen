@@ -31,6 +31,8 @@ SignalGen is designed to work with **your product repo**. The MVP should start w
 
 - [User flow overview](docs/user-flow.md) — how a founder interacts with SignalGen from screenshot upload to PR/preview/memory.
 - [Technical design](docs/technical-design.md) — how the full system will be built across Next.js, MongoDB, Gemini Enterprise Agent Platform / ADK TypeScript, GitHub, and Vercel.
+- [Completion plan](docs/completion-plan.md) — bite-sized remaining implementation plan for the hackathon-ready project.
+- [Project guide and testing checklist](docs/project-guide-and-testing.md) — detailed user-facing feature guide and end-to-end testing instructions.
 - [ADK TypeScript agent](agent/README.md) — local setup for the code-first SignalGen agent skeleton.
 
 ## Tech stack

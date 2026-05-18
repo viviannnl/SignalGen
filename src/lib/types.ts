@@ -23,6 +23,29 @@ export type FounderDecisionRecord = {
   decidedBy: string;
 };
 
+export type ImplementationStatus = "queued" | "ready_for_pr" | "pr_created";
+
+export type ImplementationPrDraft = {
+  title: string;
+  body: string;
+  branchName: string;
+  filesToInspect: string[];
+  testCommands: string[];
+  checklist: string[];
+  previewUrl?: string;
+};
+
+export type ImplementationRecord = {
+  status: ImplementationStatus;
+  summary: string;
+  branchName: string;
+  guardrails: string[];
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
+  prDraft?: ImplementationPrDraft;
+};
+
 export type SignalCluster = {
   id: string;
   type: SignalType;
@@ -59,6 +82,7 @@ export type SignalGenRun = {
     acceptanceCriteria: string[];
   };
   founderDecision?: FounderDecisionRecord;
+  implementation?: ImplementationRecord;
   pr?: {
     url?: string;
     previewUrl?: string;

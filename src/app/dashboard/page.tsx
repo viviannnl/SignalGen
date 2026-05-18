@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [decidingRunId, setDecidingRunId] = useState<string | null>(null);
+  const [implementingRunId, setImplementingRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const latestRun = runs[0];
@@ -111,6 +112,27 @@ export default function DashboardPage() {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
     } finally {
       setDecidingRunId(null);
+    }
+  }
+
+  async function runImplementationAction(runId: string, action: "start" | "prepare-pr") {
+    setImplementingRunId(runId);
+    setError(null);
+
+    try {
+      const endpoint = action === "start" ? `/api/runs/${runId}/implementation` : `/api/runs/${runId}/implementation/prepare-pr`;
+      const response = await fetch(endpoint, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not update implementation state.");
+      }
+
+      await loadRuns();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
+    } finally {
+      setImplementingRunId(null);
     }
   }
 
@@ -235,6 +257,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
+                  <InfoCard title="Extracted comments" items={latestRun.comments} />
                   <InfoCard title="Evidence" items={latestRun.signal.evidence} />
                   <InfoCard title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
                   <InfoCard title="Guardrails" items={latestRun.plan.guardrails} />
@@ -248,6 +271,7 @@ export default function DashboardPage() {
                 </div>
 
                 <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={decideRun} />
+                <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={runImplementationAction} />
               </div>
             ) : (
               <p className="mt-5 text-slate-300">No runs yet. Create the first SignalGen run.</p>
@@ -299,6 +323,7 @@ export default function DashboardPage() {
                           </button>
                         </div>
                       ) : null}
+                      {run.implementation ? <span className="text-xs text-amber-200">Implementation: {run.implementation.status}</span> : null}
                     </div>
                   </div>
                 ))}
@@ -370,6 +395,88 @@ function FounderDecisionPanel({
           Reject plan
         </button>
       </div>
+    </div>
+  );
+}
+
+function ImplementationPanel({
+  run,
+  implementingRunId,
+  onRunAction,
+}: {
+  run: ApiRun;
+  implementingRunId: string | null;
+  onRunAction: (runId: string, action: "start" | "prepare-pr") => Promise<void>;
+}) {
+  if (run.status !== "approved") {
+    return null;
+  }
+
+  const isWorking = implementingRunId === run._id;
+
+  if (!run.implementation) {
+    return (
+      <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-5">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Guarded implementation</p>
+        <p className="mt-3 text-sm leading-6 text-slate-200">
+          This approved signal is ready for the next safe agent step. Starting implementation only queues an auditable job; it does not edit code or create a PR yet.
+        </p>
+        <button
+          onClick={() => void onRunAction(run._id, "start")}
+          disabled={isWorking}
+          className="mt-5 rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isWorking ? "Starting..." : "Start guarded implementation"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-5">
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Implementation memory</p>
+      <p className="mt-3 text-lg font-semibold text-white">{run.implementation.status}</p>
+      <p className="mt-2 text-sm text-slate-300">Branch: {run.implementation.branchName}</p>
+      <p className="mt-3 text-sm leading-6 text-slate-200">{run.implementation.summary}</p>
+      {run.implementation.status === "queued" ? (
+        <button
+          onClick={() => void onRunAction(run._id, "prepare-pr")}
+          disabled={isWorking}
+          className="mt-5 rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isWorking ? "Preparing..." : "Prepare PR draft"}
+        </button>
+      ) : null}
+      {run.implementation.prDraft ? (
+        <div className="mt-5 rounded-2xl bg-slate-950/70 p-4">
+          <p className="text-sm font-semibold text-white">{run.implementation.prDraft.title}</p>
+          <p className="mt-2 text-xs text-slate-400">PR branch: {run.implementation.prDraft.branchName}</p>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Files to inspect</p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-300">
+            {run.implementation.prDraft.filesToInspect.map((item) => (
+              <li key={item}>• {item}</li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Test commands</p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-300">
+            {run.implementation.prDraft.testCommands.map((item) => (
+              <li key={item}>• {item}</li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Checklist</p>
+          <ul className="mt-2 space-y-2 text-sm text-slate-300">
+            {run.implementation.prDraft.checklist.map((item) => (
+              <li key={item}>• {item}</li>
+            ))}
+          </ul>
+          <details className="mt-4 text-sm text-slate-300">
+            <summary className="cursor-pointer text-cyan-100">View PR body draft</summary>
+            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-900 p-4 text-xs leading-5 text-slate-200">
+              {run.implementation.prDraft.body}
+            </pre>
+          </details>
+        </div>
+      ) : null}
     </div>
   );
 }
