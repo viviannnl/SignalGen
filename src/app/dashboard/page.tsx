@@ -12,6 +12,7 @@ export default function DashboardPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const latestRun = runs[0];
@@ -53,10 +54,23 @@ export default function DashboardPage() {
       const data = (await response.json()) as { run: ApiRun };
       setRuns((currentRuns) => [data.run, ...currentRuns]);
       setFiles([]);
+
+      setIsProcessing(true);
+      const tickResponse = await fetch("/api/agent/tick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: data.run._id }),
+      });
+      if (!tickResponse.ok) {
+        throw new Error("Run was created, but the agent tick failed. Try Refresh runs or check server logs.");
+      }
+
+      await loadRuns();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
     } finally {
       setIsCreating(false);
+      setIsProcessing(false);
     }
   }
 
@@ -122,7 +136,7 @@ export default function DashboardPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">New run</p>
             <h2 className="mt-3 text-2xl font-semibold">Upload screenshots</h2>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              This first version stores the uploaded screenshot names and creates a demo signal run in MongoDB. Next, we will connect OCR and Gemini.
+              Upload feedback screenshots. SignalGen stores the run, then automatically wakes the agent tick to classify, cluster, and decide whether there is enough evidence to act.
             </p>
 
             <label className="mt-6 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-cyan-300/30 bg-cyan-300/5 p-6 text-center transition hover:border-cyan-200/60 hover:bg-cyan-300/10">
@@ -150,10 +164,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => void createRun()}
-              disabled={isCreating}
+              disabled={isCreating || isProcessing}
               className="mt-6 w-full rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isCreating ? "Creating run..." : "Create SignalGen run"}
+              {isProcessing ? "Agent is processing..." : isCreating ? "Creating run..." : "Upload and run agent"}
             </button>
           </div>
 
@@ -176,6 +190,7 @@ export default function DashboardPage() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <InfoCard title="Evidence" items={latestRun.signal.evidence} />
+                  <InfoCard title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
                   <InfoCard title="Guardrails" items={latestRun.plan.guardrails} />
                   <InfoCard title="Files to change" items={latestRun.plan.filesToChange} />
                   <InfoCard title="Acceptance criteria" items={latestRun.plan.acceptanceCriteria} />
@@ -232,9 +247,11 @@ function InfoCard({ title, items }: { title: string; items: string[] }) {
     <div className="rounded-3xl bg-slate-950/70 p-5">
       <p className="text-sm font-semibold text-white">{title}</p>
       <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
-        {items.map((item) => (
-          <li key={item}>• {item}</li>
-        ))}
+        {items.length > 0 ? (
+          items.map((item) => <li key={item}>• {item}</li>)
+        ) : (
+          <li className="text-slate-500">No items yet.</li>
+        )}
       </ul>
     </div>
   );

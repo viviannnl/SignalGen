@@ -1,8 +1,8 @@
 const fallbackComments = [
-  "AI写出来会不会很假？",
-  "我怕HR一看就是AI",
-  "能不能更像我自己写的？",
-  "不要那种很generic的模板",
+  "Can you add Slack integration?",
+  "We need Slack support so the team can see updates automatically.",
+  "Would love a Slack integration feature for feedback alerts.",
+  "It is confusing to check another dashboard manually every day.",
 ];
 
 export function buildDemoRun(screenshotNames: string[]) {
@@ -10,34 +10,26 @@ export function buildDemoRun(screenshotNames: string[]) {
 
   return {
     source: "dashboard_upload" as const,
-    status: "plan_ready" as const,
+    status: "uploaded" as const,
     createdAt: now,
     updatedAt: now,
     screenshotNames,
     comments: fallbackComments,
     signal: {
-      title: "Users worry AI-generated cover letters sound generic",
-      summary:
-        "The strongest repeated concern is trust and personalization: users want LetterGen output to sound like them, not like a generic AI template.",
-      confidence: 0.91,
-      evidence: fallbackComments.slice(0, 3),
+      title: "Pending feedback upload",
+      summary: "SignalGen has stored the upload and is waiting for the agent tick to classify and cluster feedback.",
+      confidence: 0,
+      evidence: [],
     },
     plan: {
-      recommendedChange:
-        "Add a landing-page trust section explaining how LetterGen personalizes each cover letter using the user's resume and target job description.",
-      filesToChange: ["app/page.tsx", "components/landing/PersonalizationTrustSection.tsx"],
+      recommendedChange: "Waiting for the agent to decide whether there is enough evidence to act.",
+      filesToChange: [],
       guardrails: [
-        "Do not touch auth, payment, Stripe, Supabase, environment variables, or API routes.",
-        "Only edit landing-page UI/copy files unless the founder explicitly approves more scope.",
+        "No code changes before founder approval.",
         "Create a branch and PR instead of pushing directly to main.",
-        "Run the configured build/test command before creating the PR.",
+        "Do not touch auth, payment, database, or environment files without explicit approval.",
       ],
-      acceptanceCriteria: [
-        "Explain that LetterGen uses resume and job-description context.",
-        "Address the concern that AI-generated cover letters sound generic.",
-        "Keep claims realistic and avoid overpromising recruiter outcomes.",
-        "Build passes before PR is created.",
-      ],
+      acceptanceCriteria: ["Agent tick processes the uploaded run before any product-change plan is proposed."],
     },
   };
 }
