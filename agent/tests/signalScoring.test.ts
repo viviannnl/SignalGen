@@ -37,4 +37,26 @@ describe("SignalGen signal scoring", () => {
     expect(result.signalClusters[0]?.decision).toBe("propose_plan");
     expect(result.implementationPlan?.acceptanceCriteria.length).toBeGreaterThan(0);
   });
+
+  it("preserves evidence text when extracted comments have custom ids", () => {
+    const run: SignalGenRun = {
+      _id: "custom-id-run",
+      status: "uploaded",
+      extractedComments: [
+        { id: "source-a", text: "Can you add export support?" },
+        { id: "source-b", text: "I need export support for my team." },
+        { id: "source-c", text: "Would love an export feature." },
+      ],
+    };
+
+    const result = analyzeRun(run);
+
+    expect(result.status).toBe("plan_ready");
+    expect(result.signalClusters[0]?.evidenceCommentIds).toEqual(["source-a", "source-b", "source-c"]);
+    expect(result.topSignal?.evidence).toEqual([
+      "Can you add export support?",
+      "I need export support for my team.",
+      "Would love an export feature.",
+    ]);
+  });
 });
