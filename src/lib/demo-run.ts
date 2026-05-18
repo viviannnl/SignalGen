@@ -5,7 +5,7 @@ const fallbackComments = [
   "It is confusing to check another dashboard manually every day.",
 ];
 
-export function buildDemoRun(screenshotNames: string[]) {
+export function buildPendingRun(screenshotNames: string[], comments: string[]) {
   const now = new Date().toISOString();
 
   return {
@@ -14,10 +14,10 @@ export function buildDemoRun(screenshotNames: string[]) {
     createdAt: now,
     updatedAt: now,
     screenshotNames,
-    comments: fallbackComments,
+    comments,
     signal: {
       title: "Pending feedback upload",
-      summary: "SignalGen has stored the upload and is waiting for the agent tick to classify and cluster feedback.",
+      summary: "SignalGen has stored the extracted feedback and is waiting for the agent tick to classify and cluster comments.",
       confidence: 0,
       evidence: [],
     },
@@ -29,7 +29,11 @@ export function buildDemoRun(screenshotNames: string[]) {
         "Create a branch and PR instead of pushing directly to main.",
         "Do not touch auth, payment, database, or environment files without explicit approval.",
       ],
-      acceptanceCriteria: ["Agent tick processes the uploaded run before any product-change plan is proposed."],
+      acceptanceCriteria: ["Agent tick processes the extracted comments before any product-change plan is proposed."],
     },
   };
+}
+
+export function buildDemoRun(screenshotNames: string[]) {
+  return buildPendingRun(screenshotNames, fallbackComments);
 }

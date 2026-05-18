@@ -41,14 +41,20 @@ export default function DashboardPage() {
     setError(null);
 
     try {
+      const formData = new FormData();
+      const filesToUpload = files.slice(0, 5);
+      for (const file of filesToUpload) {
+        formData.append("screenshots", file);
+      }
+
       const response = await fetch("/api/runs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ screenshotNames: fileNames }),
+        body: formData,
       });
 
       if (!response.ok) {
-        throw new Error("Could not create a SignalGen run.");
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not create a SignalGen run.");
       }
 
       const data = (await response.json()) as { run: ApiRun };
@@ -136,7 +142,7 @@ export default function DashboardPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">New run</p>
             <h2 className="mt-3 text-2xl font-semibold">Upload screenshots</h2>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              Upload feedback screenshots. SignalGen stores the run, then automatically wakes the agent tick to classify, cluster, and decide whether there is enough evidence to act.
+              Upload feedback screenshots. SignalGen uses Gemini to extract visible comments, stores the run, then automatically wakes the agent tick to classify, cluster, and decide whether there is enough evidence to act.
             </p>
 
             <label className="mt-6 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-cyan-300/30 bg-cyan-300/5 p-6 text-center transition hover:border-cyan-200/60 hover:bg-cyan-300/10">
@@ -147,7 +153,13 @@ export default function DashboardPage() {
                 accept="image/png,image/jpeg,image/webp"
                 type="file"
                 className="sr-only"
-                onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+                onChange={(event) => {
+                  const selectedFiles = Array.from(event.target.files ?? []);
+                  setFiles(selectedFiles.slice(0, 5));
+                  if (selectedFiles.length > 5) {
+                    setError("Please upload at most 5 screenshots per run. The first 5 were selected.");
+                  }
+                }}
               />
             </label>
 
@@ -164,10 +176,10 @@ export default function DashboardPage() {
 
             <button
               onClick={() => void createRun()}
-              disabled={isCreating || isProcessing}
+              disabled={isCreating || isProcessing || files.length === 0}
               className="mt-6 w-full rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isProcessing ? "Agent is processing..." : isCreating ? "Creating run..." : "Upload and run agent"}
+              {isProcessing ? "Agent is processing..." : isCreating ? "Extracting comments..." : "Upload and run agent"}
             </button>
           </div>
 
