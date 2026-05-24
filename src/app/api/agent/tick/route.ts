@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { processAgentTick, type AgentTickStore } from "@/lib/agent-tick";
+import { callHostedAgent, getHostedAgentConfig } from "@/lib/hosted-agent-client";
 import { getSignalGenDb } from "@/lib/mongodb";
 import type { SignalGenRun } from "@/lib/types";
 
@@ -33,6 +34,13 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as TickRequestBody;
     const runId = body.runId?.trim() || undefined;
+
+    const hostedConfig = getHostedAgentConfig();
+    if (hostedConfig && runId) {
+      const result = await callHostedAgent(hostedConfig, runId);
+      return NextResponse.json(result);
+    }
+
     const db = await getSignalGenDb();
     const collection = db.collection("runs");
 

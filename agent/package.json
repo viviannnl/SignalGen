@@ -7,8 +7,10 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && vitest run tests",
     "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
     "dev": "adk run src/agent.ts",
     "web": "adk web"
   },
@@ -20,12 +22,12 @@
     "@google/adk": "^1.1.0",
     "dotenv": "^17.4.2",
     "mongodb": "^7.2.0",
+    "tsx": "^4.22.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@google/adk-devtools": "^1.1.0",
     "@types/node": "^25.8.0",
-    "tsx": "^4.22.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   }
