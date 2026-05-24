@@ -202,7 +202,7 @@ export default function DashboardPage() {
     setError(null);
 
     try {
-      const endpoint = action === "start" ? `/api/runs/${runId}/implementation` : `/api/runs/${runId}/implementation/prepare-pr`;
+      const endpoint = action === "start" ? `/api/runs/${runId}/implement` : `/api/runs/${runId}/implementation/prepare-pr`;
       const response = await fetch(endpoint, { method: "POST" });
 
       if (!response.ok) {
