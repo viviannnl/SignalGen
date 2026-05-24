@@ -11,34 +11,12 @@ describe("repo action guardrails", () => {
     });
   });
 
-  it("requires GITHUB_TOKEN, TARGET_REPO_OWNER, and TARGET_REPO_NAME to be set", async () => {
-    const saved = {
-      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-      TARGET_REPO_OWNER: process.env.TARGET_REPO_OWNER,
-      TARGET_REPO_NAME: process.env.TARGET_REPO_NAME,
-    };
-    delete process.env.GITHUB_TOKEN;
-    delete process.env.TARGET_REPO_OWNER;
-    delete process.env.TARGET_REPO_NAME;
-
-    try {
-      const result = await createProductPr({
-        runId: "run-1",
-        approved: true,
-        plan: {
-          recommendedChange: "Add dark mode",
-          filesToChange: ["src/styles/theme.css"],
-          guardrails: ["No breaking changes"],
-          acceptanceCriteria: ["Toggle works on all pages"],
-        },
-      });
-      expect(result.created).toBe(false);
-      expect((result as { reason: string }).reason).toContain("GITHUB_TOKEN");
-    } finally {
-      if (saved.GITHUB_TOKEN !== undefined) process.env.GITHUB_TOKEN = saved.GITHUB_TOKEN;
-      if (saved.TARGET_REPO_OWNER !== undefined) process.env.TARGET_REPO_OWNER = saved.TARGET_REPO_OWNER;
-      if (saved.TARGET_REPO_NAME !== undefined) process.env.TARGET_REPO_NAME = saved.TARGET_REPO_NAME;
-    }
+  it("keeps PR automation disabled until product safety gates exist", async () => {
+    await expect(createProductPr({ runId: "run-1", approved: true })).resolves.toEqual({
+      created: false,
+      reason:
+        "GitHub PR automation is intentionally disabled until workspace, repository connection, and approval gates are implemented.",
+    });
   });
 });
 
