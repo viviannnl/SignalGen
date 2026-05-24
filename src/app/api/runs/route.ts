@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 
 type CreateRunBody = {
   screenshotNames?: string[];
+  comments?: string[];
 };
 
 function serializeRun(run: Record<string, unknown>) {
@@ -76,6 +77,10 @@ async function buildRunFromMultipart(request: Request) {
 async function buildRunFromJson(request: Request) {
   const body = (await request.json().catch(() => ({}))) as CreateRunBody;
   const screenshotNames = body.screenshotNames?.filter(Boolean).slice(0, 20) ?? [];
+  const comments = body.comments?.filter(Boolean).slice(0, 100) ?? [];
+  if (comments.length > 0) {
+    return buildPendingRun(screenshotNames, comments);
+  }
   return buildDemoRun(screenshotNames);
 }
 

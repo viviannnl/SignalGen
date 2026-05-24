@@ -10,6 +10,8 @@ type ApiRun = SignalGenRun & { _id: string };
 export default function DashboardPage() {
   const [runs, setRuns] = useState<ApiRun[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [pastedText, setPastedText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -71,6 +73,87 @@ export default function DashboardPage() {
       }).catch(() => undefined);
 
       // Start non-blocking polling for this run
+      setIsProcessing(true);
+      void pollRunUntilProcessed(data.run._id);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
+      setIsProcessing(false);
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  async function createDemoRun() {
+    setIsCreating(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not create a SignalGen run.");
+      }
+
+      const data = (await response.json()) as { run: ApiRun };
+      setRuns((currentRuns) => [data.run, ...currentRuns]);
+
+      void fetch("/api/agent/tick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: data.run._id }),
+      }).catch(() => undefined);
+
+      setIsProcessing(true);
+      void pollRunUntilProcessed(data.run._id);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
+      setIsProcessing(false);
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  async function createPasteRun() {
+    const comments = pastedText
+      .split("\n")
+      .map((comment) => comment.trim())
+      .filter(Boolean);
+
+    if (comments.length === 0) {
+      setError("Enter at least one comment to analyze.");
+      return;
+    }
+
+    setIsCreating(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comments }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not create a SignalGen run.");
+      }
+
+      const data = (await response.json()) as { run: ApiRun };
+      setRuns((currentRuns) => [data.run, ...currentRuns]);
+      setPastedText("");
+
+      void fetch("/api/agent/tick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: data.run._id }),
+      }).catch(() => undefined);
+
       setIsProcessing(true);
       void pollRunUntilProcessed(data.run._id);
     } catch (caughtError) {
@@ -222,9 +305,28 @@ export default function DashboardPage() {
               Upload feedback screenshots. SignalGen uses Gemini to extract visible comments, stores the run, then automatically wakes the agent tick to classify, cluster, and decide whether there is enough evidence to act.
             </p>
 
-            <label className="mt-6 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-cyan-300/30 bg-cyan-300/5 p-6 text-center transition hover:border-cyan-200/60 hover:bg-cyan-300/10">
+            <label
+              className={`mt-6 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed p-6 text-center transition hover:border-cyan-200/60 hover:bg-cyan-300/10 ${
+                isDragging ? "border-cyan-200/80 bg-cyan-300/15" : "border-cyan-300/30 bg-cyan-300/5"
+              }`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                const dropped = Array.from(e.dataTransfer.files);
+                setFiles(dropped.slice(0, 5));
+                if (dropped.length > 5) {
+                  setError("Please upload at most 5 screenshots per run. The first 5 were selected.");
+                }
+              }}
+            >
               <span className="text-lg font-semibold">Drop or choose screenshots</span>
               <span className="mt-2 text-sm text-slate-300">PNG, JPG, or WebP comment screenshots</span>
+              <span className="mt-2 text-xs text-slate-400">Max 5 screenshots · 4 MB each · 8 MB total</span>
               <input
                 multiple
                 accept="image/png,image/jpeg,image/webp"
@@ -239,6 +341,32 @@ export default function DashboardPage() {
                 }}
               />
             </label>
+
+            <button
+              onClick={() => void createDemoRun()}
+              disabled={isCreating || isProcessing}
+              className="mt-3 text-xs text-cyan-300 underline hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Use sample feedback
+            </button>
+
+            <div>
+              <p className="mt-5 text-sm font-semibold text-white">Or paste feedback comments</p>
+              <textarea
+                value={pastedText}
+                onChange={(event) => setPastedText(event.target.value)}
+                placeholder="Paste one comment per line…"
+                rows={4}
+                className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
+              />
+              <button
+                onClick={() => void createPasteRun()}
+                disabled={pastedText.trim() === "" || isCreating || isProcessing}
+                className="mt-3 rounded-full border border-cyan-300/40 px-4 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-200 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Analyze pasted feedback
+              </button>
+            </div>
 
             {fileNames.length > 0 ? (
               <div className="mt-5 rounded-2xl bg-slate-950/70 p-4">
@@ -276,6 +404,12 @@ export default function DashboardPage() {
                     {Math.round((latestRun.signal?.confidence ?? 0) * 100)}%
                   </span>
                 </div>
+
+                {latestRun.extractionDiagnostics ? (
+                  <div className="rounded-2xl bg-slate-950/70 px-4 py-3 text-xs text-slate-400">
+                    Extracted from {latestRun.extractionDiagnostics.screenshotCount} screenshot{latestRun.extractionDiagnostics.screenshotCount !== 1 ? "s" : ""} · {latestRun.extractionDiagnostics.commentCount} comment{latestRun.extractionDiagnostics.commentCount !== 1 ? "s" : ""} found
+                  </div>
+                ) : null}
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <InfoCard title="Extracted comments" items={latestRun.comments ?? []} />
