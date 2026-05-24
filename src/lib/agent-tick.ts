@@ -27,7 +27,20 @@ export async function processAgentTick(
   for (const run of runs) {
     if (!run._id || !PENDING_STATUSES.includes(run.status)) continue;
 
-    const update = await runtime.analyzeRun(run);
+    let update: Partial<SignalGenRun>;
+    try {
+      update = await runtime.analyzeRun(run);
+    } catch (error) {
+      const now = new Date().toISOString();
+      const message = error instanceof Error ? error.message : String(error);
+      update = {
+        status: "failed",
+        processingError: message,
+        updatedAt: now,
+        processedAt: now,
+      };
+    }
+
     const updated = await store.updateRunAnalysis(run._id, update);
     if (updated) {
       processedRunIds.push(run._id);

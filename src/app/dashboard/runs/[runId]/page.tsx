@@ -19,6 +19,7 @@ const statusBadgeStyles: Record<SignalGenRunStatus, string> = {
   plan_ready: "bg-emerald-300/10 text-emerald-200",
   approved: "bg-emerald-300/10 text-emerald-200",
   rejected: "bg-red-300/10 text-red-200",
+  failed: "bg-red-300/10 text-red-200",
   pr_created: "bg-cyan-300/10 text-cyan-200",
   needs_review: "bg-amber-300/10 text-amber-200",
   insufficient_evidence: "bg-slate-300/10 text-slate-300",

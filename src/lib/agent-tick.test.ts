@@ -168,6 +168,29 @@ describe("processAgentTick", () => {
     expect(store.updateRunAnalysis).not.toHaveBeenCalled();
   });
 
+  it("marks run as failed with processingError when analysis throws", async () => {
+    let savedUpdate: Partial<SignalGenRun> | undefined;
+    const store: AgentTickStore = {
+      listPendingRuns: vi.fn(async () => [makeRun({ _id: "error-run" })]),
+      updateRunAnalysis: vi.fn(async (_runId, update) => {
+        savedUpdate = update;
+        return true;
+      }),
+    };
+    const agentRuntime = {
+      kind: "adk" as const,
+      analyzeRun: vi.fn(async () => {
+        throw new Error("Gemini quota exceeded");
+      }),
+    };
+
+    const result = await processAgentTick(store, { agentRuntime });
+
+    expect(result.processedRunIds).toEqual(["error-run"]);
+    expect(savedUpdate?.status).toBe("failed");
+    expect(savedUpdate?.processingError).toBe("Gemini quota exceeded");
+  });
+
   it("marks runs with no comments as insufficient evidence so they do not stay pending forever", async () => {
     let savedUpdate: Partial<SignalGenRun> | undefined;
     const store: AgentTickStore = {

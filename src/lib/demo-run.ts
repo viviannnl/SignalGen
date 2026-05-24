@@ -5,7 +5,11 @@ const fallbackComments = [
   "It is confusing to check another dashboard manually every day.",
 ];
 
-export function buildPendingRun(screenshotNames: string[], comments: string[]) {
+export function buildPendingRun(
+  screenshotNames: string[],
+  comments: string[],
+  extractionDiagnostics?: { commentCount: number; screenshotCount: number; screenshotNames: string[] },
+) {
   const now = new Date().toISOString();
 
   return {
@@ -13,6 +17,7 @@ export function buildPendingRun(screenshotNames: string[], comments: string[]) {
     status: "uploaded" as const,
     createdAt: now,
     updatedAt: now,
+    extractionDiagnostics,
     screenshotNames,
     comments,
     signal: {

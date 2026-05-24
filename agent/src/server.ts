@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { ObjectId } from "mongodb";
 import { analyzeRun } from "./tools/signals.js";
 import { closeMongoClient, getRun, updateRunWithAnalysis } from "./tools/runs.js";
+import type { ProcessRunResult } from "./schemas.js";
 
 const RUNTIME = "google-cloud-adk";
 const SERVICE = "signalgen-agent";
@@ -69,7 +70,16 @@ async function handleProcessRun(req: http.IncomingMessage, res: http.ServerRespo
     return;
   }
 
-  const result = await analyzeRun(run);
+  let result: ProcessRunResult;
+  try {
+    result = await analyzeRun(run);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[signalgen-agent] analysis failed for run", runId, error);
+    await updateRunWithAnalysis({ runId, status: "failed", processingError: message });
+    writeJson(res, 500, { ok: false, error: "Analysis failed" });
+    return;
+  }
   await updateRunWithAnalysis(result);
 
   writeJson(res, 200, {

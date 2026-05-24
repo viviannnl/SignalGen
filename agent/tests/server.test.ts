@@ -191,6 +191,35 @@ describe("POST /process-run", () => {
     expect(analyzeRun).not.toHaveBeenCalled();
   });
 
+  it("returns 500 and marks the run failed when analysis throws", async () => {
+    vi.stubEnv("AGENT_WORKER_SECRET", "test-secret");
+    const runId = new ObjectId().toHexString();
+    const run: SignalGenRun = { _id: runId, status: "uploaded", comments: ["Please add export support"] };
+    vi.mocked(getRun).mockResolvedValue(run);
+    vi.mocked(analyzeRun).mockRejectedValue(new Error("Gemini quota exceeded"));
+
+    const response = await makeRequest(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/process-run",
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-secret" },
+      },
+      JSON.stringify({ runId }),
+    );
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({ ok: false, error: "Analysis failed" });
+    expect(getRun).toHaveBeenCalledWith(runId);
+    expect(analyzeRun).toHaveBeenCalledWith(run);
+    expect(updateRunWithAnalysis).toHaveBeenCalledWith({
+      runId,
+      status: "failed",
+      processingError: "Gemini quota exceeded",
+    });
+  });
+
   it("returns 200 with processedRunIds on successful analysis", async () => {
     vi.stubEnv("AGENT_WORKER_SECRET", "test-secret");
     const runId = new ObjectId().toHexString();

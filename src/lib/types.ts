@@ -4,6 +4,7 @@ export type SignalGenRunStatus =
   | "plan_ready"
   | "approved"
   | "rejected"
+  | "failed"
   | "pr_created"
   | "needs_review"
   | "insufficient_evidence";
@@ -66,6 +67,12 @@ export type SignalGenRun = {
   createdAt: string;
   updatedAt: string;
   processedAt?: string;
+  processingError?: string;
+  extractionDiagnostics?: {
+    commentCount: number;
+    screenshotCount: number;
+    screenshotNames: string[];
+  };
   screenshotNames: string[];
   comments: string[];
   signalClusters?: SignalCluster[];

@@ -23,6 +23,7 @@ export type RunStatus =
   | "plan_ready"
   | "approved"
   | "rejected"
+  | "failed"
   | "pr_created";
 
 export type ExtractedComment = {
@@ -64,10 +65,16 @@ export type SignalGenRun = {
   status: RunStatus;
   screenshotNames?: string[];
   comments?: string[];
+  extractionDiagnostics?: {
+    commentCount: number;
+    screenshotCount: number;
+    screenshotNames: string[];
+  };
   extractedComments?: string[] | ExtractedComment[];
   signalClusters?: SignalCluster[];
   signal?: Signal;
   plan?: Plan;
+  processingError?: string;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
@@ -79,4 +86,5 @@ export type ProcessRunResult = {
   signal?: Signal;
   plan?: Plan;
   comments?: string[];
+  processingError?: string;
 };

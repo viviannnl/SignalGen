@@ -65,6 +65,11 @@ async function buildRunFromMultipart(request: Request) {
   return buildPendingRun(
     screenshots.map((screenshot) => screenshot.name),
     comments,
+    {
+      commentCount: comments.length,
+      screenshotCount: screenshots.length,
+      screenshotNames: screenshots.map((screenshot) => screenshot.name),
+    },
   );
 }
 
