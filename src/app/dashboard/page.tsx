@@ -63,22 +63,21 @@ export default function DashboardPage() {
       setRuns((currentRuns) => [data.run, ...currentRuns]);
       setFiles([]);
 
-      setIsProcessing(true);
-      const tickResponse = await fetch("/api/agent/tick", {
+      // Fire-and-forget: kick the agent tick without blocking the UI
+      void fetch("/api/agent/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ runId: data.run._id }),
-      });
-      if (!tickResponse.ok) {
-        throw new Error("Run was created, but the agent tick failed. Try Refresh runs or check server logs.");
-      }
+      }).catch(() => undefined);
 
-      await loadRuns();
+      // Start non-blocking polling for this run
+      setIsProcessing(true);
+      void pollRunUntilProcessed(data.run._id);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
+      setIsProcessing(false);
     } finally {
       setIsCreating(false);
-      setIsProcessing(false);
     }
   }
 
@@ -134,6 +133,28 @@ export default function DashboardPage() {
     } finally {
       setImplementingRunId(null);
     }
+  }
+
+  async function pollRunUntilProcessed(runId: string) {
+    const maxAttempts = 30; // 60s max
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 2000));
+      try {
+        const response = await fetch(`/api/runs/${runId}`, { cache: "no-store" });
+        if (!response.ok) break;
+        const body = (await response.json()) as { run?: ApiRun };
+        if (!body.run) break;
+
+        // Update this run in the list in-place
+        setRuns((prev) => prev.map((r) => (r._id === runId ? (body.run as ApiRun) : r)));
+
+        if (body.run.status !== "uploaded") break;
+      } catch {
+        break;
+      }
+    }
+    setIsProcessing(false);
+    void loadRuns();
   }
 
   useEffect(() => {
@@ -248,26 +269,26 @@ export default function DashboardPage() {
                 <div className="flex flex-col gap-3 rounded-3xl bg-slate-950/70 p-5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-sm text-slate-400">Top signal</p>
-                    <h2 className="mt-2 text-2xl font-semibold">{latestRun.signal.title}</h2>
-                    <p className="mt-3 text-sm leading-6 text-slate-300">{latestRun.signal.summary}</p>
+                    <h2 className="mt-2 text-2xl font-semibold">{latestRun.signal?.title ?? "Pending analysis"}</h2>
+                    <p className="mt-3 text-sm leading-6 text-slate-300">{latestRun.signal?.summary ?? ""}</p>
                   </div>
                   <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-sm font-semibold text-emerald-300">
-                    {Math.round(latestRun.signal.confidence * 100)}%
+                    {Math.round((latestRun.signal?.confidence ?? 0) * 100)}%
                   </span>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  <InfoCard title="Extracted comments" items={latestRun.comments} />
-                  <InfoCard title="Evidence" items={latestRun.signal.evidence} />
+                  <InfoCard title="Extracted comments" items={latestRun.comments ?? []} />
+                  <InfoCard title="Evidence" items={latestRun.signal?.evidence ?? []} />
                   <InfoCard title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
-                  <InfoCard title="Guardrails" items={latestRun.plan.guardrails} />
-                  <InfoCard title="Files to change" items={latestRun.plan.filesToChange} />
-                  <InfoCard title="Acceptance criteria" items={latestRun.plan.acceptanceCriteria} />
+                  <InfoCard title="Guardrails" items={latestRun.plan?.guardrails ?? []} />
+                  <InfoCard title="Files to change" items={latestRun.plan?.filesToChange ?? []} />
+                  <InfoCard title="Acceptance criteria" items={latestRun.plan?.acceptanceCriteria ?? []} />
                 </div>
 
                 <div className="rounded-3xl bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Recommended product change</p>
-                  <p className="mt-2 text-slate-100">{latestRun.plan.recommendedChange}</p>
+                  <p className="mt-2 text-slate-100">{latestRun.plan?.recommendedChange ?? "Awaiting agent analysis."}</p>
                 </div>
 
                 <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={decideRun} />
@@ -294,10 +315,14 @@ export default function DashboardPage() {
                 {runs.map((run) => (
                   <div key={run._id} className="grid gap-3 bg-slate-950/50 p-4 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center">
                     <div>
-                      <p className="font-semibold">{run.signal.title}</p>
+                      <p className="font-semibold">
+                        <Link href={`/dashboard/runs/${run._id}`} className="transition hover:text-cyan-200">
+                          {run.signal?.title ?? "Processing..."}
+                        </Link>
+                      </p>
                       <p className="mt-1 text-xs text-slate-400">{new Date(run.createdAt).toLocaleString()}</p>
                     </div>
-                    <p className="text-sm text-slate-300">{run.plan.recommendedChange}</p>
+                    <p className="text-sm text-slate-300">{run.plan?.recommendedChange ?? "Awaiting analysis."}</p>
                     <div className="flex flex-col items-start gap-2 md:items-end">
                       <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{run.status}</span>
                       {run.founderDecision ? (

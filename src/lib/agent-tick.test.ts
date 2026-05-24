@@ -147,6 +147,6 @@ describe("processAgentTick", () => {
 
     expect(result.processedRunIds).toEqual(["empty-run"]);
     expect(savedUpdate?.status).toBe("insufficient_evidence");
-    expect(savedUpdate?.signal.title).toBe("No actionable signal detected yet");
+    expect(savedUpdate?.signal?.title).toBe("No actionable signal detected yet");
   });
 });

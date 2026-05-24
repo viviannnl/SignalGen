@@ -10,11 +10,12 @@ Claude's job is to:
 1. Understand the user's goal.
 2. Inspect the repository as needed using read-only actions.
 3. Produce a clear implementation plan with small tasks and success criteria.
-4. Assign execution tasks to Hermes Agent through the `hermes` MCP server / Hermes conversation bridge.
-5. Monitor Hermes's approval requests using Hermes MCP permission/event tools.
-6. Decide whether to approve Hermes's requested commands without asking the user for routine SignalGen codebase work.
-7. Review Hermes's reported changes and the resulting git diff/read-only evidence.
-8. Update the plan based on what Hermes completed, what failed, and what still needs work.
+4. Assign execution tasks to Hermes Agent through the direct Hermes MCP task tools, primarily `mcp__hermes__tasks_start`.
+5. Monitor Hermes task progress using `mcp__hermes__tasks_status` / `mcp__hermes__tasks_list`, and use `mcp__hermes__tasks_cancel` only when a task is clearly wrong or unsafe.
+6. Monitor Hermes's approval requests using Hermes MCP permission/event tools when working through gateway sessions.
+7. Decide whether to approve Hermes's requested commands without asking the user for routine SignalGen codebase work.
+8. Review Hermes's reported changes and the resulting git diff/read-only evidence.
+9. Update the plan based on what Hermes completed, what failed, and what still needs work.
 
 Hermes Agent's job is to:
 - edit files anywhere inside `/Users/vivianli/projects/SignalGen`
@@ -73,13 +74,33 @@ Claude may use read-only actions for planning and review:
 - Search files
 - Inspect git status/diff/log
 - Inspect package scripts and documentation
-- Use Hermes MCP tools to assign tasks, monitor events, and respond to permissions
+- Use Hermes MCP task tools to assign work directly to Hermes
+- Use Hermes MCP messaging/event/permission tools for project coordination, status logs, and command approvals
 - Review Hermes's output
 - Draft plans, checklists, risks, and review notes
 
-Claude should phrase executable assignments to Hermes clearly, for example:
+## Direct Hermes MCP Task Delegation
 
-> Hermes, implement task 2 in `/Users/vivianli/projects/SignalGen`: add the OCR extraction route. Success criteria: uploaded screenshots are parsed into comment objects, malformed uploads return a typed error, and tests/build pass. You have implementation access to the SignalGen package. Request command approvals as needed; Claude will approve routine commands scoped to this repo.
+Claude should use direct Hermes MCP task tools as the normal execution path. Do not treat Discord messages as task assignment.
+
+Primary tools:
+- `mcp__hermes__tasks_start`: start a Hermes execution task
+- `mcp__hermes__tasks_status`: check one task's progress and recent logs
+- `mcp__hermes__tasks_list`: list recent Hermes MCP tasks
+- `mcp__hermes__tasks_cancel`: stop a clearly wrong/unsafe task
+
+For routine SignalGen implementation work, call `mcp__hermes__tasks_start` with:
+- `workdir`: `/Users/vivianli/projects/SignalGen`
+- `risk_level`: `routine`
+- `user_approved`: `false`
+- `deliver_target`: `discord:1504507446616653876` when a visible hackathon-thread status update is useful
+- a full prompt containing: goal, repository context, exact scope, likely files, success criteria, verification commands, safety boundaries, and expected report format
+
+Only set `risk_level` to `sensitive`, `destructive`, or `production` after Vivian explicitly approves that specific risk. For those non-routine levels, set `user_approved: true` only after Vivian's approval.
+
+Claude should phrase executable assignments to Hermes clearly inside the `prompt` field, for example:
+
+> Implement task 2 in `/Users/vivianli/projects/SignalGen`: add the OCR extraction route. Success criteria: uploaded screenshots are parsed into comment objects, malformed uploads return a typed error, and tests/build pass. You have implementation access to the SignalGen package. Do not expose secrets. Run the relevant tests/lint/build and report changed files, commands run, verification results, risks, and next step.
 
 ## Planning Format
 

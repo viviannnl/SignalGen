@@ -77,20 +77,20 @@ export default function Home() {
               <div className="mb-5 flex items-center justify-between border-b border-white/10 pb-4">
                 <div>
                   <p className="text-sm text-slate-400">Current signal</p>
-                  <h2 className="text-xl font-semibold">AI cover letters sound generic</h2>
+                  <h2 className="text-xl font-semibold">Users need clearer onboarding</h2>
                 </div>
                 <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">91%</span>
               </div>
               <div className="space-y-4 text-sm text-slate-300">
                 <div className="rounded-2xl bg-white/[0.04] p-4">
                   <p className="font-medium text-white">Evidence</p>
-                  <p className="mt-2">“AI写出来会不会很假？”</p>
-                  <p>“我怕HR一看就是AI”</p>
-                  <p>“能不能更像我自己写的？”</p>
+                  <p className="mt-2">“I got confused during setup”</p>
+                  <p>“The first step is unclear”</p>
+                  <p>“Where do I even start?”</p>
                 </div>
                 <div className="rounded-2xl bg-white/[0.04] p-4">
                   <p className="font-medium text-white">Recommended change</p>
-                  <p className="mt-2">Add a trust section explaining how LetterGen personalizes each cover letter.</p>
+                  <p className="mt-2">Add a step-by-step onboarding guide to the product&apos;s getting-started flow.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-white/[0.04] p-4">
