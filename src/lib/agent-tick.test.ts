@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { processAgentTick, type AgentTickStore } from "./agent-tick";
+import { analyzeRunWithGemini } from "./adk-agent-runtime";
 import type { SignalGenRun } from "./types";
 
 function makeRun(overrides: Partial<SignalGenRun> = {}): SignalGenRun {
@@ -34,7 +35,39 @@ function makeRun(overrides: Partial<SignalGenRun> = {}): SignalGenRun {
   };
 }
 
+async function withoutGeminiApiKey<T>(fn: () => Promise<T>): Promise<T> {
+  const savedKey = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+
+  try {
+    return await fn();
+  } finally {
+    if (savedKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = savedKey;
+    }
+  }
+}
+
 describe("processAgentTick", () => {
+  it("analyzeRunWithGemini falls back to keyword analysis when GEMINI_API_KEY is not set", async () => {
+    await withoutGeminiApiKey(async () => {
+      const run = makeRun({
+        comments: [
+          "Can you add Slack integration?",
+          "We need Slack support.",
+          "Would love a Slack integration feature.",
+        ],
+      });
+
+      const result = await analyzeRunWithGemini(run);
+
+      expect(result.status).toBe("plan_ready");
+      expect(result.signalClusters).toBeDefined();
+    });
+  });
+
   it("processes pending uploaded runs through the integrated ADK agent runtime and persists analysis", async () => {
     const updatedRuns: SignalGenRun[] = [];
     const agentRuntime = {
@@ -96,15 +129,17 @@ describe("processAgentTick", () => {
   });
 
   it("can target the newly created run id instead of only the oldest pending backlog", async () => {
-    const store: AgentTickStore = {
-      listPendingRuns: vi.fn(async () => [makeRun({ _id: "new-run" })]),
-      updateRunAnalysis: vi.fn(async () => true),
-    };
+    await withoutGeminiApiKey(async () => {
+      const store: AgentTickStore = {
+        listPendingRuns: vi.fn(async () => [makeRun({ _id: "new-run" })]),
+        updateRunAnalysis: vi.fn(async () => true),
+      };
 
-    const result = await processAgentTick(store, { limit: 5, runId: "new-run" });
+      const result = await processAgentTick(store, { limit: 5, runId: "new-run" });
 
-    expect(result.processedRunIds).toEqual(["new-run"]);
-    expect(store.listPendingRuns).toHaveBeenCalledWith(5, "new-run");
+      expect(result.processedRunIds).toEqual(["new-run"]);
+      expect(store.listPendingRuns).toHaveBeenCalledWith(5, "new-run");
+    });
   });
 
   it("does not process completed or non-pending runs returned by the store", async () => {

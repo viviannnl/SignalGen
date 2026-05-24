@@ -70,7 +70,7 @@ export function isSupportedImageSignature(file: Pick<ScreenshotFile, "type" | "d
   return false;
 }
 
-function stripMarkdownFence(text: string): string {
+export function stripMarkdownFence(text: string): string {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fenced?.[1]) return fenced[1].trim();
 

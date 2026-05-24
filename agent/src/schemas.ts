@@ -22,6 +22,7 @@ export type RunStatus =
   | "needs_review"
   | "plan_ready"
   | "approved"
+  | "rejected"
   | "pr_created";
 
 export type ExtractedComment = {
@@ -43,12 +44,18 @@ export type SignalCluster = {
   rationale: string;
 };
 
-export type ImplementationPlan = {
+export type Plan = {
+  recommendedChange: string;
+  filesToChange: string[];
+  guardrails: string[];
+  acceptanceCriteria: string[];
+};
+
+export type Signal = {
   title: string;
   summary: string;
-  proposedFiles: string[];
-  acceptanceCriteria: string[];
-  riskLevel: "low" | "medium" | "high";
+  confidence: number;
+  evidence: string[];
 };
 
 export type SignalGenRun = {
@@ -56,15 +63,11 @@ export type SignalGenRun = {
   source?: string;
   status: RunStatus;
   screenshotNames?: string[];
+  comments?: string[];
   extractedComments?: string[] | ExtractedComment[];
   signalClusters?: SignalCluster[];
-  topSignal?: {
-    title: string;
-    summary?: string;
-    confidence?: number;
-    evidence?: string[];
-  };
-  implementationPlan?: ImplementationPlan;
+  signal?: Signal;
+  plan?: Plan;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
@@ -72,7 +75,8 @@ export type SignalGenRun = {
 export type ProcessRunResult = {
   runId: string;
   status: RunStatus;
-  signalClusters: SignalCluster[];
-  topSignal?: SignalGenRun["topSignal"];
-  implementationPlan?: ImplementationPlan;
+  signalClusters?: SignalCluster[];
+  signal?: Signal;
+  plan?: Plan;
+  comments?: string[];
 };
