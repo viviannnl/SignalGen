@@ -86,6 +86,19 @@ describe("GET /health", () => {
 });
 
 describe("POST /process-run", () => {
+  it("returns 500 when the worker secret is not configured", async () => {
+    vi.stubEnv("AGENT_WORKER_SECRET", "");
+
+    const response = await makeRequest(
+      { hostname: "127.0.0.1", port, path: "/process-run", method: "POST", headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ runId: new ObjectId().toHexString() }),
+    );
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({ ok: false, error: "Agent worker is misconfigured" });
+    expect(getRun).not.toHaveBeenCalled();
+  });
+
   it("returns 401 when Authorization header is missing", async () => {
     vi.stubEnv("AGENT_WORKER_SECRET", "test-secret");
 
