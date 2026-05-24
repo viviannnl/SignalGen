@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [decidingRunId, setDecidingRunId] = useState<string | null>(null);
   const [implementingRunId, setImplementingRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"new-analysis" | "all-signals">("new-analysis");
 
   const latestRun = runs[0];
   const fileNames = useMemo(() => files.map((file) => file.name), [files]);
@@ -282,27 +283,62 @@ export default function DashboardPage() {
             </Link>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">Founder signal dashboard</h1>
             <p className="mt-2 max-w-2xl text-slate-300">
-              Upload feedback screenshots, generate a first product signal, and store the run in MongoDB as the memory layer.
+              Upload feedback screenshots, generate a first product signal.
             </p>
           </div>
           <button
             onClick={() => void loadRuns()}
             className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-300 hover:text-cyan-100"
           >
-            Refresh runs
+            Refresh
           </button>
         </nav>
+
+        <div className="flex gap-1 self-start rounded-full border border-white/10 bg-white/[0.04] p-1" role="tablist" aria-label="Dashboard sections">
+          <button
+            id="new-analysis-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "new-analysis"}
+            aria-controls="new-analysis-panel"
+            onClick={() => setActiveTab("new-analysis")}
+            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+              activeTab === "new-analysis" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            New analysis
+          </button>
+          <button
+            id="all-signals-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "all-signals"}
+            aria-controls="all-signals-panel"
+            onClick={() => setActiveTab("all-signals")}
+            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+              activeTab === "all-signals" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            All signals
+          </button>
+        </div>
 
         {error ? (
           <div className="rounded-3xl border border-red-400/30 bg-red-400/10 p-4 text-red-100">{error}</div>
         ) : null}
 
-        <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+        {activeTab === "new-analysis" ? (
+          <section
+            id="new-analysis-panel"
+            role="tabpanel"
+            aria-labelledby="new-analysis-tab"
+            className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]"
+          >
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">New run</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">New analysis</p>
             <h2 className="mt-3 text-2xl font-semibold">Upload screenshots</h2>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              Upload feedback screenshots. SignalGen uses Gemini to extract visible comments, stores the run, then automatically wakes the agent tick to classify, cluster, and decide whether there is enough evidence to act.
+              Upload feedback screenshots. SignalGen extracts visible comments, records the evidence, and decides whether there is enough signal to act.
             </p>
 
             <label
@@ -389,9 +425,9 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">Latest memory</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">Latest signal</p>
             {isLoading ? (
-              <p className="mt-5 text-slate-300">Loading MongoDB runs...</p>
+              <p className="mt-5 text-slate-300">Loading signals...</p>
             ) : latestRun ? (
               <div className="mt-5 space-y-5">
                 <div className="flex flex-col gap-3 rounded-3xl bg-slate-950/70 p-5 sm:flex-row sm:items-start sm:justify-between">
@@ -429,18 +465,27 @@ export default function DashboardPage() {
                 <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={runImplementationAction} />
               </div>
             ) : (
-              <p className="mt-5 text-slate-300">No runs yet. Create the first SignalGen run.</p>
+              <p className="mt-5 text-slate-300">No signals yet. Upload feedback to create your first signal.</p>
             )}
           </div>
         </section>
+        ) : null}
 
-        <section className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
+        {activeTab === "all-signals" ? (
+          <section
+            id="all-signals-panel"
+            role="tabpanel"
+            aria-labelledby="all-signals-tab"
+            className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"
+          >
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">Run history</p>
-              <h2 className="mt-3 text-2xl font-semibold">MongoDB product-iteration memory</h2>
+              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">All signals</p>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                Signals, evidence, and decisions detected from uploaded feedback.
+              </p>
             </div>
-            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{runs.length} runs</span>
+            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{runs.length} signals</span>
           </div>
 
           <div className="mt-6 overflow-hidden rounded-3xl border border-white/10">
@@ -488,10 +533,11 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="p-5 text-slate-300">No run history yet.</p>
+              <p className="p-5 text-slate-300">No signals yet.</p>
             )}
           </div>
         </section>
+        ) : null}
       </div>
     </main>
   );
