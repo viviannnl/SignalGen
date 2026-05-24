@@ -9,6 +9,7 @@ import {
   type ScreenshotFile,
 } from "@/lib/gemini-extraction";
 import { getSignalGenDb } from "@/lib/mongodb";
+import { resolveWorkspaceId, buildWorkspaceFilter } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -84,9 +85,10 @@ async function buildRunFromJson(request: Request) {
   return buildDemoRun(screenshotNames);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const workspaceId = resolveWorkspaceId(request);
   const db = await getSignalGenDb();
-  const runs = await db.collection("runs").find({}).sort({ createdAt: -1 }).limit(20).toArray();
+  const runs = await db.collection("runs").find(buildWorkspaceFilter(workspaceId)).sort({ createdAt: -1 }).limit(20).toArray();
 
   return NextResponse.json({ runs: runs.map(serializeRun) });
 }
@@ -94,7 +96,9 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") ?? "";
-    const run = contentType.includes("multipart/form-data") ? await buildRunFromMultipart(request) : await buildRunFromJson(request);
+    const workspaceId = resolveWorkspaceId(request);
+    const runData = contentType.includes("multipart/form-data") ? await buildRunFromMultipart(request) : await buildRunFromJson(request);
+    const run = { ...runData, workspaceId };
 
     const db = await getSignalGenDb();
     const result = await db.collection("runs").insertOne(run);

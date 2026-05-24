@@ -68,6 +68,8 @@ export type SignalGenRun = {
   updatedAt: string;
   processedAt?: string;
   processingError?: string;
+  workspaceId?: string;
+  createdByUserId?: string;
   extractionDiagnostics?: {
     commentCount: number;
     screenshotCount: number;

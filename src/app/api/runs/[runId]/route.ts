@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { getSignalGenDb } from "@/lib/mongodb";
+import { resolveWorkspaceId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,11 @@ export async function GET(_request: Request, context: RouteContext) {
   const doc = await db.collection("runs").findOne({ _id: new ObjectId(runId) });
 
   if (!doc) {
+    return NextResponse.json({ error: "Run not found." }, { status: 404 });
+  }
+
+  const workspaceId = resolveWorkspaceId(_request);
+  if (doc.workspaceId && doc.workspaceId !== workspaceId) {
     return NextResponse.json({ error: "Run not found." }, { status: 404 });
   }
 
