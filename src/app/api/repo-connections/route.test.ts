@@ -5,11 +5,17 @@ import type { RepoConnection } from "@/lib/types";
 const mockCreateRepoConnection = vi.hoisted(() => vi.fn());
 const mockListRepoConnectionsByWorkspace = vi.hoisted(() => vi.fn());
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
+const mockUpdateRepoConnection = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/mongodb", () => ({
+  getSignalGenDb: vi.fn(),
+}));
 
 vi.mock("@/lib/repo-connection-db", () => ({
   createRepoConnection: mockCreateRepoConnection,
   listRepoConnectionsByWorkspace: mockListRepoConnectionsByWorkspace,
   findRepoConnectionById: mockFindRepoConnectionById,
+  updateRepoConnection: mockUpdateRepoConnection,
 }));
 
 vi.mock("@/lib/workspace", () => ({
@@ -47,8 +53,10 @@ describe("/api/repo-connections", () => {
     mockCreateRepoConnection.mockReset();
     mockListRepoConnectionsByWorkspace.mockReset();
     mockFindRepoConnectionById.mockReset();
+    mockUpdateRepoConnection.mockReset();
     mockListRepoConnectionsByWorkspace.mockResolvedValue([]);
     mockFindRepoConnectionById.mockResolvedValue(null);
+    mockUpdateRepoConnection.mockResolvedValue(null);
   });
 
   it("GET /api/repo-connections returns 200 with persisted workspace connections", async () => {
@@ -213,5 +221,72 @@ describe("/api/repo-connections", () => {
 
     expect(response.status).toBe(503);
     expect(body).toEqual({ error: "Repo connection could not be loaded. Please try again." });
+  });
+
+  it("PATCH /api/repo-connections/[connectionId] updates provided fields and returns updated connection", async () => {
+    const existing = makeRepoConnection();
+    const updated = makeRepoConnection({ owner: "viviannnl", repo: "SignalGen", defaultBranch: "develop" });
+    mockFindRepoConnectionById.mockResolvedValue(existing);
+    mockUpdateRepoConnection.mockResolvedValue(updated);
+    const { PATCH } = await import("./[connectionId]/route");
+
+    const response = await PATCH(
+      new Request("http://localhost/api/repo-connections/connection-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner: " viviannnl ", repo: " SignalGen ", defaultBranch: " develop " }),
+      }),
+      { params: Promise.resolve({ connectionId: "connection-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ connection: updated });
+    expect(mockUpdateRepoConnection).toHaveBeenCalledOnce();
+    expect(mockUpdateRepoConnection.mock.calls[0][0]).toBe("connection-1");
+    expect(mockUpdateRepoConnection.mock.calls[0][1]).toMatchObject({
+      owner: "viviannnl",
+      repo: "SignalGen",
+      defaultBranch: "develop",
+    });
+    expect(typeof mockUpdateRepoConnection.mock.calls[0][1].updatedAt).toBe("string");
+  });
+
+  it("PATCH /api/repo-connections/[connectionId] returns 404 for cross-workspace connection", async () => {
+    mockFindRepoConnectionById.mockResolvedValue(makeRepoConnection({ workspaceId: "other-workspace" }));
+    const { PATCH } = await import("./[connectionId]/route");
+
+    const response = await PATCH(
+      new Request("http://localhost/api/repo-connections/connection-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner: "viviannnl" }),
+      }),
+      { params: Promise.resolve({ connectionId: "connection-1" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual({ error: "Connection not found" });
+    expect(mockUpdateRepoConnection).not.toHaveBeenCalled();
+  });
+
+  it("PATCH /api/repo-connections/[connectionId] returns 404 for unknown connectionId", async () => {
+    mockFindRepoConnectionById.mockResolvedValue(null);
+    const { PATCH } = await import("./[connectionId]/route");
+
+    const response = await PATCH(
+      new Request("http://localhost/api/repo-connections/unknown", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: "SignalGen" }),
+      }),
+      { params: Promise.resolve({ connectionId: "unknown" }) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body).toEqual({ error: "Connection not found" });
+    expect(mockUpdateRepoConnection).not.toHaveBeenCalled();
   });
 });

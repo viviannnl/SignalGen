@@ -1,12 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
-import type { ProductSignal, SignalGenRun, SignalPlan } from "@/lib/types";
+import type { ProductSignal, RepoConnection, SignalGenRun, SignalPlan } from "@/lib/types";
 
 type ApiRun = SignalGenRun & { _id: string };
 type ApiSignal = ProductSignal & { _id: string; currentPlan?: SignalPlan };
+type DashboardTab = "new-analysis" | "all-signals" | "github";
+type GitHubStatus =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "disconnected" }
+  | { status: "installed"; installationId: string }
+  | { status: "connected"; installationId: string; repoConnection: RepoConnection };
 
 export default function DashboardPage() {
   const [runs, setRuns] = useState<ApiRun[]>([]);
@@ -20,7 +27,8 @@ export default function DashboardPage() {
   const [decidingRunId, setDecidingRunId] = useState<string | null>(null);
   const [implementingRunId, setImplementingRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"new-analysis" | "all-signals">("new-analysis");
+  const [activeTab, setActiveTab] = useState<DashboardTab>("new-analysis");
+  const [githubStatus, setGithubStatus] = useState<GitHubStatus>({ status: "loading" });
 
   const latestRun = runs[0];
   const fileNames = useMemo(() => files.map((file) => file.name), [files]);
@@ -32,6 +40,26 @@ export default function DashboardPage() {
     }
     const data = (await response.json()) as { signals: ApiSignal[] };
     setSignals(data.signals);
+  }
+
+  async function loadGitHubStatus({ showLoading = true }: { showLoading?: boolean } = {}) {
+    if (showLoading) {
+      setGithubStatus({ status: "loading" });
+    }
+
+    try {
+      const response = await fetch("/api/github/connection-status", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Could not load GitHub connection status.");
+      }
+      const data = (await response.json()) as GitHubStatus;
+      setGithubStatus(data);
+    } catch (caughtError) {
+      setGithubStatus({
+        status: "error",
+        message: caughtError instanceof Error ? caughtError.message : "Could not load GitHub connection status.",
+      });
+    }
   }
 
   async function loadRuns() {
@@ -256,6 +284,8 @@ export default function DashboardPage() {
   useEffect(() => {
     let isMounted = true;
 
+    void Promise.resolve().then(() => loadGitHubStatus({ showLoading: false }));
+
     Promise.all([
       fetch("/api/runs", { cache: "no-store" }),
       fetch("/api/signals", { cache: "no-store" }),
@@ -341,6 +371,19 @@ export default function DashboardPage() {
             }`}
           >
             All signals
+          </button>
+          <button
+            id="github-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "github"}
+            aria-controls="github-panel"
+            onClick={() => setActiveTab("github")}
+            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+              activeTab === "github" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            GitHub
           </button>
         </div>
 
@@ -499,55 +542,214 @@ export default function DashboardPage() {
             aria-labelledby="all-signals-tab"
             className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"
           >
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">All signals</p>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                Signals, evidence, and decisions detected from uploaded feedback.
-              </p>
-            </div>
-            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{signals.length} signals</span>
-          </div>
-
-          <div className="mt-6 overflow-hidden rounded-3xl border border-white/10">
-            {signals.length > 0 ? (
-              <div className="divide-y divide-white/10">
-                {signals.map((signal) => (
-                  <div key={signal._id} className="grid gap-3 bg-slate-950/50 p-4 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center">
-                    <div>
-                      <p className="font-semibold">{signal.title}</p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {signal.type.replaceAll("_", " ")} · {signal.evidenceItemIds.length} evidence item{signal.evidenceItemIds.length !== 1 ? "s" : ""} · {new Date(signal.updatedAt).toLocaleString()}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-slate-300">{signal.summary}</p>
-                    </div>
-                    <p className="text-sm text-slate-300">
-                      {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
-                    </p>
-                    <div className="flex flex-col items-start gap-2 md:items-end">
-                      <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{signal.status.replaceAll("_", " ")}</span>
-                      <span className="text-xs text-slate-400">
-                        Strength {Math.round(signal.strength * 100)}% · Confidence {Math.round(signal.confidence * 100)}%
-                      </span>
-                      {signal.currentPlan?.approvalDecision ? (
-                        <span className="text-xs text-slate-400">
-                          Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {new Date(signal.currentPlan.approvalDecision.decidedAt).toLocaleString()}
-                        </span>
-                      ) : signal.status === "plan_ready" && signal.currentPlan ? (
-                        <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">All signals</p>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                  Signals, evidence, and decisions detected from uploaded feedback.
+                </p>
               </div>
-            ) : (
-              <p className="p-5 text-slate-300">No signals yet. Upload feedback to start building signal memory.</p>
-            )}
-          </div>
-        </section>
+              <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{signals.length} signals</span>
+            </div>
+
+            <div className="mt-6 overflow-hidden rounded-3xl border border-white/10">
+              {signals.length > 0 ? (
+                <div className="divide-y divide-white/10">
+                  {signals.map((signal) => (
+                    <div key={signal._id} className="grid gap-3 bg-slate-950/50 p-4 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center">
+                      <div>
+                        <p className="font-semibold">{signal.title}</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {signal.type.replaceAll("_", " ")} · {signal.evidenceItemIds.length} evidence item{signal.evidenceItemIds.length !== 1 ? "s" : ""} · {new Date(signal.updatedAt).toLocaleString()}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">{signal.summary}</p>
+                      </div>
+                      <p className="text-sm text-slate-300">
+                        {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
+                      </p>
+                      <div className="flex flex-col items-start gap-2 md:items-end">
+                        <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{signal.status.replaceAll("_", " ")}</span>
+                        <span className="text-xs text-slate-400">
+                          Strength {Math.round(signal.strength * 100)}% · Confidence {Math.round(signal.confidence * 100)}%
+                        </span>
+                        {signal.currentPlan?.approvalDecision ? (
+                          <span className="text-xs text-slate-400">
+                            Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {new Date(signal.currentPlan.approvalDecision.decidedAt).toLocaleString()}
+                          </span>
+                        ) : signal.status === "plan_ready" && signal.currentPlan ? (
+                          <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="p-5 text-slate-300">No signals yet. Upload feedback to start building signal memory.</p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "github" ? (
+          <section
+            id="github-panel"
+            role="tabpanel"
+            aria-labelledby="github-tab"
+            className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"
+          >
+            <GitHubPanel githubStatus={githubStatus} onRepoSelected={loadGitHubStatus} />
+          </section>
         ) : null}
       </div>
     </main>
+  );
+}
+
+function GitHubPanel({
+  githubStatus,
+  onRepoSelected,
+}: {
+  githubStatus: GitHubStatus;
+  onRepoSelected: () => void;
+}) {
+  const [owner, setOwner] = useState("");
+  const [repo, setRepo] = useState("");
+  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  async function submitRepoSelection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (githubStatus.status !== "installed") return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const createResponse = await fetch("/api/repo-connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo }),
+      });
+      if (!createResponse.ok) {
+        const data = (await createResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not create repo connection.");
+      }
+      const createData = (await createResponse.json()) as { connection: RepoConnection };
+      if (!createData.connection._id) {
+        throw new Error("Repo connection was created without an id.");
+      }
+
+      const selectResponse = await fetch(`/api/repo-connections/${createData.connection._id}/select-repo`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo, defaultBranch, installationId: githubStatus.installationId }),
+      });
+      if (!selectResponse.ok) {
+        const data = (await selectResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not select repository.");
+      }
+
+      onRepoSelected();
+    } catch (caughtError) {
+      setSubmitError(caughtError instanceof Error ? caughtError.message : "Could not select repository.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (githubStatus.status === "loading") {
+    return <p className="text-slate-300">Loading GitHub connection status...</p>;
+  }
+
+  if (githubStatus.status === "error") {
+    return <p className="rounded-3xl border border-red-400/30 bg-red-400/10 p-4 text-red-100">{githubStatus.message}</p>;
+  }
+
+  if (githubStatus.status === "disconnected") {
+    return (
+      <div>
+        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
+        <h2 className="mt-3 text-2xl font-semibold">GitHub is not connected.</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+          Connect the GitHub App so SignalGen can remember which product repository belongs to this workspace.
+        </p>
+        <a
+          href="/api/github/install"
+          className="mt-5 inline-flex rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200"
+        >
+          Connect GitHub App
+        </a>
+      </div>
+    );
+  }
+
+  if (githubStatus.status === "installed") {
+    return (
+      <div>
+        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
+        <h2 className="mt-3 text-2xl font-semibold">GitHub App installed. Select a repository to connect.</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+          Repo write capabilities remain disabled until all implementation gates are active.
+        </p>
+        <form onSubmit={(event) => void submitRepoSelection(event)} className="mt-6 grid gap-4 md:grid-cols-3">
+          <label className="text-sm font-semibold text-slate-200">
+            Owner
+            <input
+              value={owner}
+              onChange={(event) => setOwner(event.target.value)}
+              className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
+              placeholder="viviannnl"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-200">
+            Repo
+            <input
+              value={repo}
+              onChange={(event) => setRepo(event.target.value)}
+              className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
+              placeholder="SignalGen"
+            />
+          </label>
+          <label className="text-sm font-semibold text-slate-200">
+            Default branch
+            <input
+              value={defaultBranch}
+              onChange={(event) => setDefaultBranch(event.target.value)}
+              className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
+              placeholder="main"
+            />
+          </label>
+          <div className="md:col-span-3">
+            <button
+              type="submit"
+              disabled={isSubmitting || owner.trim() === "" || repo.trim() === "" || defaultBranch.trim() === ""}
+              className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting ? "Connecting repo..." : "Connect repository"}
+            </button>
+            {submitError ? <p className="mt-3 text-sm text-red-200">{submitError}</p> : null}
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
+      <h2 className="mt-3 text-2xl font-semibold">Connected repository</h2>
+      <div className="mt-5 grid gap-3 rounded-3xl bg-slate-950/70 p-5 text-sm text-slate-300 md:grid-cols-2">
+        <p>Owner: {githubStatus.repoConnection.owner}</p>
+        <p>Repo: {githubStatus.repoConnection.repo}</p>
+        <p>Default branch: {githubStatus.repoConnection.defaultBranch}</p>
+        <p>Installation ID: {githubStatus.installationId}</p>
+      </div>
+      <p className="mt-4 text-sm leading-6 text-slate-300">
+        Repo write capabilities are disabled. Implementation gates will be wired in a later milestone.
+      </p>
+    </div>
   );
 }
 
