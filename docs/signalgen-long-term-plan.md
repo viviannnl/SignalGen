@@ -2,7 +2,7 @@
 
 > **Canonical source of truth.** Use this document as the current long-term roadmap for SignalGen. Older dated plans in `docs/` are historical execution records; when product direction changes, update this file first.
 
-**Last updated:** 2026-05-24
+**Last updated:** 2026-05-25
 
 **Product thesis:** SignalGen is the memory layer of the founder's product iteration loop. It collects feedback/events, turns them into durable product signals, accumulates evidence, proposes plans only when evidence is strong enough, and eventually helps implement approved changes safely through audited PRs.
 
@@ -27,13 +27,18 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
 - M8 guarded implementation scaffold exists:
   - implementation jobs can be queued/simulated,
   - real repo writes/PR creation are not enabled by default.
+- Real GitHub PR automation M1–M2 are complete on the `feat/real-github-pr-automation` branch:
+  - security/product spec exists in `docs/github-pr-automation-spec.md`,
+  - workspace-scoped repo connection, implementation job, and audit log types exist,
+  - mocked repo connection API routes and tests exist,
+  - GitHub App install URL/callback enablement is now being added behind signed state and disabled write capabilities.
 - Workspace scaffold exists:
   - workspace fields and demo/backward-compatible behavior exist,
   - real production auth/workspace membership is not fully wired yet.
 
 ### Important current limitation
 
-SignalGen is not yet allowed to modify a real code repository. The product can analyze, remember, plan, and queue/simulate implementation intent, but real branch/commit/push/PR automation remains gated until auth, workspace ownership, repository permissions, founder approval, and auditability are production-grade.
+SignalGen is not yet allowed to modify a real code repository. The product can analyze, remember, plan, queue/simulate implementation intent, and begin the GitHub App installation handshake, but real branch/commit/push/PR automation remains gated until auth, workspace ownership, selected-repo permissions, founder approval, auditability, and a sandbox smoke test are production-grade.
 
 ---
 
@@ -61,7 +66,7 @@ Pause for explicit Vivian/founder approval before any of these actions:
 
 1. Production deployment or production environment variable changes.
 2. Auth-provider production setup or account-level permission changes.
-3. GitHub App/OAuth installation or granting live repository permissions.
+3. GitHub App/OAuth installation or granting live repository permissions, except the 2026-05-25 approved work to add and test a least-privilege GitHub App install handshake for selected repos. Real repo-write capability still requires a separate approval.
 4. Real external-repo branch/commit/push/PR creation.
 5. Production database migrations or destructive production database writes.
 6. Reading, printing, or sharing secret values.
@@ -84,13 +89,15 @@ Let SignalGen safely create branches, commits, and pull requests in a user's con
 
 ### Current state
 
-M8 created a guarded implementation/PR automation scaffold only.
+M8 created a guarded implementation/PR automation scaffold. M1–M2 of the real GitHub PR automation track are now complete locally, and A3 GitHub App installation enablement is the active milestone.
 
 Current behavior:
 
 - Real GitHub PR creation is disabled.
 - Implementation jobs are queued/simulated.
 - The product has a placeholder path for implementation intent and job status.
+- Workspace-scoped repo connection domain helpers and mocked API routes exist.
+- GitHub App install redirect/callback routes are being enabled with signed state, but callback completion leaves capabilities disabled until repository verification and explicit write-capability approval.
 - Existing guardrails should prevent repo writing without explicit approval and repo capability.
 
 ### Required before enabling real PR automation
@@ -139,9 +146,16 @@ Current behavior:
 - Add/strengthen tests that prove real writes are impossible while capability is disabled.
 - Define the exact job state machine.
 
-#### A2. Add repo connection data model
+#### A2. Add repo connection data model — complete locally
 
-Likely collections/models:
+Implemented on `feat/real-github-pr-automation` in commit `783e802`:
+
+- `repo_connections`, `implementation_jobs`, and `audit_logs` TypeScript domain shapes.
+- Workspace-scoped repo connection helpers.
+- Mocked repo connection API routes.
+- Tests proving new connections default to disconnected and all write capabilities remain disabled.
+
+Likely durable collections/models when moving from in-memory mocks to MongoDB:
 
 - `repo_connections`
 - `implementation_jobs`
@@ -160,11 +174,13 @@ Required fields:
 - `createdByUserId`
 - `createdAt` / `updatedAt`
 
-#### A3. Add GitHub App connection flow
+#### A3. Add GitHub App connection flow — active now
 
-- Create GitHub App manually first.
-- Add app installation callback route.
-- Store installation metadata without storing raw secret values in logs or docs.
+- Create/configure a least-privilege GitHub App manually first.
+- Add signed install redirect route: `/api/github/install`.
+- Add installation callback route: `/api/github/install/callback`.
+- Store/return installation metadata without storing raw secret values in logs or API responses.
+- Keep `pr_creation`, `branch_push`, and `issue_creation` disabled after callback until repository selection, workspace membership, approval, and sandbox verification are complete.
 - Add dashboard connection status.
 
 #### A4. Add approved implementation executor
