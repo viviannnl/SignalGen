@@ -24,7 +24,16 @@ export type FounderDecisionRecord = {
   decidedBy: string;
 };
 
-export type ImplementationStatus = "queued" | "ready_for_pr" | "pr_created";
+export type ImplementationStatus =
+  | "queued"
+  | "blocked"
+  | "running"
+  | "failed"
+  | "succeeded"
+  | "cancelled"
+  | "requires_attention"
+  | "ready_for_pr"
+  | "pr_created";
 
 export type ImplementationPrDraft = {
   title: string;
