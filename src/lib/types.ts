@@ -163,3 +163,84 @@ export type SignalGenRun = {
     previewUrl?: string;
   };
 };
+
+// RepoConnection — workspace-scoped GitHub repo connection
+export type RepoConnectionCapability = "pr_creation" | "branch_push" | "issue_creation";
+export type RepoConnectionStatus = "connected" | "disconnected" | "pending" | "error";
+
+export type RepoConnection = {
+  _id?: string;
+  workspaceId: string;
+  provider: "github";
+  owner: string;
+  repo: string;
+  defaultBranch: string;
+  installationId: string | null; // GitHub App installation ID, null until real App is installed
+  capabilities: Record<RepoConnectionCapability, boolean>;
+  status: RepoConnectionStatus;
+  disabledReason?: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// ImplementationJob — first-class MongoDB document tracking a real PR automation job
+export type ImplementationJobStatus =
+  | "queued"
+  | "blocked"
+  | "running"
+  | "failed"
+  | "succeeded"
+  | "cancelled"
+  | "requires_attention";
+
+export type ImplementationJob = {
+  _id?: string;
+  workspaceId: string;
+  runId: string;
+  signalId?: string;
+  planId?: string;
+  repoConnectionId: string;
+  status: ImplementationJobStatus;
+  branchName: string;
+  commitSha?: string;
+  prUrl?: string;
+  prNumber?: number;
+  idempotencyKey: string; // hash of workspaceId+runId, prevents duplicates
+  approvedByUserId: string;
+  approvedAt: string;
+  attempts: number;
+  lastAttemptAt?: string;
+  errorClass?: string;
+  errorMessage?: string;
+  logs: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+// AuditLog — immutable record of all auditable actions
+export type AuditAction =
+  | "repo_connection.created"
+  | "repo_connection.updated"
+  | "repo_connection.disabled"
+  | "run.approved"
+  | "run.rejected"
+  | "implementation_job.created"
+  | "implementation_job.gate_failed"
+  | "implementation_job.started"
+  | "implementation_job.retry_scheduled"
+  | "implementation_job.succeeded"
+  | "implementation_job.failed"
+  | "implementation_job.requires_attention"
+  | "implementation_job.cancelled";
+
+export type AuditLog = {
+  _id?: string;
+  workspaceId: string;
+  actorUserId: string;
+  action: AuditAction;
+  resourceType: "run" | "signal" | "plan" | "repo_connection" | "implementation_job";
+  resourceId: string;
+  detail: Record<string, unknown>;
+  createdAt: string;
+};
