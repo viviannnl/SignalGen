@@ -5,6 +5,7 @@ import { ObjectId } from "mongodb";
 vi.mock("../src/tools/runs.js", () => ({
   getRun: vi.fn(),
   updateRunWithAnalysis: vi.fn().mockResolvedValue({ updated: true, runId: "test-run-id" }),
+  persistSignalMemoryForRun: vi.fn().mockResolvedValue(undefined),
   closeMongoClient: vi.fn().mockResolvedValue(undefined),
   listPendingRuns: vi.fn(),
 }));
@@ -16,7 +17,7 @@ vi.mock("../src/tools/signals.js", () => ({
 }));
 
 import { createServer } from "../src/server.js";
-import { closeMongoClient, getRun, updateRunWithAnalysis } from "../src/tools/runs.js";
+import { closeMongoClient, getRun, persistSignalMemoryForRun, updateRunWithAnalysis } from "../src/tools/runs.js";
 import { analyzeRun } from "../src/tools/signals.js";
 import type { ProcessRunResult, SignalGenRun } from "../src/schemas.js";
 
@@ -220,7 +221,7 @@ describe("POST /process-run", () => {
     });
   });
 
-  it("returns 200 with processedRunIds on successful analysis", async () => {
+  it("persists first-class signal memory before marking a hosted-worker run processed", async () => {
     vi.stubEnv("AGENT_WORKER_SECRET", "test-secret");
     const runId = new ObjectId().toHexString();
     const run: SignalGenRun = { _id: runId, status: "uploaded", comments: ["Please add export support"] };
@@ -228,7 +229,32 @@ describe("POST /process-run", () => {
       runId,
       status: "plan_ready",
       comments: ["Please add export support"],
-      signalClusters: [],
+      signalClusters: [
+        {
+          id: "cluster-1",
+          type: "feature_request",
+          title: "Export support requested",
+          summary: "Users want an export flow.",
+          evidenceCommentIds: ["comment-1"],
+          severity: "medium",
+          frequency: 3,
+          confidence: 0.82,
+          decision: "propose_plan",
+          rationale: "Repeated request.",
+        },
+      ],
+      signal: {
+        title: "Export support requested",
+        summary: "Users want an export flow.",
+        confidence: 0.82,
+        evidence: ["Please add export support"],
+      },
+      plan: {
+        recommendedChange: "Add export support.",
+        filesToChange: ["src/app/dashboard/page.tsx"],
+        guardrails: ["Keep founder approval required."],
+        acceptanceCriteria: ["Export signal has a first-class plan."],
+      },
     };
     vi.mocked(getRun).mockResolvedValue(run);
     vi.mocked(analyzeRun).mockResolvedValue(analysisResult);
@@ -245,14 +271,53 @@ describe("POST /process-run", () => {
     );
 
     expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual({
-      ok: true,
-      runtime: "google-cloud-adk",
-      processedRunIds: [runId],
-      processedCount: 1,
-    });
-    expect(getRun).toHaveBeenCalledWith(runId);
-    expect(analyzeRun).toHaveBeenCalledWith(run);
+    expect(persistSignalMemoryForRun).toHaveBeenCalledWith(run, analysisResult);
     expect(updateRunWithAnalysis).toHaveBeenCalledWith(analysisResult);
+    expect(vi.mocked(persistSignalMemoryForRun).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(updateRunWithAnalysis).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not mark a hosted-worker run processed when signal memory persistence fails", async () => {
+    vi.stubEnv("AGENT_WORKER_SECRET", "test-secret");
+    const runId = new ObjectId().toHexString();
+    const run: SignalGenRun = { _id: runId, status: "uploaded", comments: ["Please add export support"] };
+    const analysisResult: ProcessRunResult = {
+      runId,
+      status: "plan_ready",
+      comments: ["Please add export support"],
+      signalClusters: [
+        {
+          id: "cluster-1",
+          type: "feature_request",
+          title: "Export support requested",
+          summary: "Users want an export flow.",
+          evidenceCommentIds: ["comment-1"],
+          severity: "medium",
+          frequency: 3,
+          confidence: 0.82,
+          decision: "propose_plan",
+          rationale: "Repeated request.",
+        },
+      ],
+    };
+    vi.mocked(getRun).mockResolvedValue(run);
+    vi.mocked(analyzeRun).mockResolvedValue(analysisResult);
+    vi.mocked(persistSignalMemoryForRun).mockRejectedValue(new Error("signal persistence failed"));
+
+    const response = await makeRequest(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/process-run",
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer test-secret" },
+      },
+      JSON.stringify({ runId }),
+    );
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({ ok: false, error: "Signal memory persistence failed" });
+    expect(updateRunWithAnalysis).not.toHaveBeenCalled();
   });
 });

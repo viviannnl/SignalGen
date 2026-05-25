@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import type { SignalGenRun } from "@/lib/types";
+import type { ProductSignal, SignalGenRun, SignalPlan } from "@/lib/types";
 
 type ApiRun = SignalGenRun & { _id: string };
+type ApiSignal = ProductSignal & { _id: string; currentPlan?: SignalPlan };
 
 export default function DashboardPage() {
   const [runs, setRuns] = useState<ApiRun[]>([]);
+  const [signals, setSignals] = useState<ApiSignal[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [pastedText, setPastedText] = useState("");
@@ -23,6 +25,15 @@ export default function DashboardPage() {
   const latestRun = runs[0];
   const fileNames = useMemo(() => files.map((file) => file.name), [files]);
 
+  async function loadSignals() {
+    const response = await fetch("/api/signals", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Could not load SignalGen signals.");
+    }
+    const data = (await response.json()) as { signals: ApiSignal[] };
+    setSignals(data.signals);
+  }
+
   async function loadRuns() {
     setIsLoading(true);
     setError(null);
@@ -34,6 +45,7 @@ export default function DashboardPage() {
       }
       const data = (await response.json()) as { runs: ApiRun[] };
       setRuns(data.runs);
+      await loadSignals();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
     } finally {
@@ -244,16 +256,25 @@ export default function DashboardPage() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch("/api/runs", { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) {
+    Promise.all([
+      fetch("/api/runs", { cache: "no-store" }),
+      fetch("/api/signals", { cache: "no-store" }),
+    ])
+      .then(async ([runsResponse, signalsResponse]) => {
+        if (!runsResponse.ok) {
           throw new Error("Could not load SignalGen runs.");
         }
-        return response.json() as Promise<{ runs: ApiRun[] }>;
+        if (!signalsResponse.ok) {
+          throw new Error("Could not load SignalGen signals.");
+        }
+        const runsData = (await runsResponse.json()) as { runs: ApiRun[] };
+        const signalsData = (await signalsResponse.json()) as { signals: ApiSignal[] };
+        return { runs: runsData.runs, signals: signalsData.signals };
       })
       .then((data) => {
         if (isMounted) {
           setRuns(data.runs);
+          setSignals(data.signals);
           setError(null);
         }
       })
@@ -485,55 +506,42 @@ export default function DashboardPage() {
                 Signals, evidence, and decisions detected from uploaded feedback.
               </p>
             </div>
-            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{runs.length} signals</span>
+            <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{signals.length} signals</span>
           </div>
 
           <div className="mt-6 overflow-hidden rounded-3xl border border-white/10">
-            {runs.length > 0 ? (
+            {signals.length > 0 ? (
               <div className="divide-y divide-white/10">
-                {runs.map((run) => (
-                  <div key={run._id} className="grid gap-3 bg-slate-950/50 p-4 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center">
+                {signals.map((signal) => (
+                  <div key={signal._id} className="grid gap-3 bg-slate-950/50 p-4 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center">
                     <div>
-                      <p className="font-semibold">
-                        <Link href={`/dashboard/runs/${run._id}`} className="transition hover:text-cyan-200">
-                          {run.signal?.title ?? "Processing..."}
-                        </Link>
+                      <p className="font-semibold">{signal.title}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {signal.type.replaceAll("_", " ")} · {signal.evidenceItemIds.length} evidence item{signal.evidenceItemIds.length !== 1 ? "s" : ""} · {new Date(signal.updatedAt).toLocaleString()}
                       </p>
-                      <p className="mt-1 text-xs text-slate-400">{new Date(run.createdAt).toLocaleString()}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">{signal.summary}</p>
                     </div>
-                    <p className="text-sm text-slate-300">{run.plan?.recommendedChange ?? "Awaiting analysis."}</p>
+                    <p className="text-sm text-slate-300">
+                      {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
+                    </p>
                     <div className="flex flex-col items-start gap-2 md:items-end">
-                      <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{run.status}</span>
-                      {run.founderDecision ? (
+                      <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{signal.status.replaceAll("_", " ")}</span>
+                      <span className="text-xs text-slate-400">
+                        Strength {Math.round(signal.strength * 100)}% · Confidence {Math.round(signal.confidence * 100)}%
+                      </span>
+                      {signal.currentPlan?.approvalDecision ? (
                         <span className="text-xs text-slate-400">
-                          Founder {run.founderDecision.action === "approve" ? "approved" : "rejected"} · {new Date(run.founderDecision.decidedAt).toLocaleString()}
+                          Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {new Date(signal.currentPlan.approvalDecision.decidedAt).toLocaleString()}
                         </span>
+                      ) : signal.currentPlan ? (
+                        <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
                       ) : null}
-                      {!run.founderDecision && run.status === "plan_ready" ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => void decideRun(run._id, "approve")}
-                            disabled={decidingRunId === run._id}
-                            className="rounded-full bg-emerald-300/90 px-3 py-1 text-xs font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => void decideRun(run._id, "reject")}
-                            disabled={decidingRunId === run._id}
-                            className="rounded-full border border-red-300/40 px-3 py-1 text-xs font-semibold text-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      ) : null}
-                      {run.implementation ? <span className="text-xs text-amber-200">Implementation: {run.implementation.status}</span> : null}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="p-5 text-slate-300">No signals yet.</p>
+              <p className="p-5 text-slate-300">No signals yet. Upload feedback to start building signal memory.</p>
             )}
           </div>
         </section>

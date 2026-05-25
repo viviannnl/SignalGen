@@ -1,11 +1,18 @@
 import { signalGenAdkRuntime, type AgentRuntime } from "./adk-agent-runtime";
-import type { SignalGenRun, SignalGenRunStatus } from "./types";
+import { projectRunClustersToSignalMemory } from "./signal-memory";
+import type { ProductSignal, SignalGenRun, SignalGenRunStatus, SignalPlan } from "./types";
 
 const PENDING_STATUSES: SignalGenRunStatus[] = ["uploaded", "signal_detected"];
 
 export type AgentTickStore = {
   listPendingRuns: (limit: number, runId?: string) => Promise<SignalGenRun[]>;
   updateRunAnalysis: (runId: string, update: Partial<SignalGenRun>) => Promise<boolean>;
+  listSignals?: (workspaceId?: string) => Promise<ProductSignal[]>;
+  listPlans?: (workspaceId?: string) => Promise<SignalPlan[]>;
+  persistSignalMemory?: (
+    run: SignalGenRun,
+    projection: ReturnType<typeof projectRunClustersToSignalMemory>,
+  ) => Promise<void>;
 };
 
 export type AgentTickResult = {
@@ -39,6 +46,17 @@ export async function processAgentTick(
         updatedAt: now,
         processedAt: now,
       };
+    }
+
+    if (store.persistSignalMemory && update.signalClusters) {
+      const existingSignals = store.listSignals ? await store.listSignals(run.workspaceId) : [];
+      const existingPlans = store.listPlans ? await store.listPlans(run.workspaceId) : [];
+      const projection = projectRunClustersToSignalMemory(run._id, update.signalClusters, existingSignals, existingPlans, {
+        workspaceId: run.workspaceId,
+        now: update.processedAt ?? update.updatedAt,
+        sourcePlan: update.plan,
+      });
+      await store.persistSignalMemory({ ...run, ...update }, projection);
     }
 
     const updated = await store.updateRunAnalysis(run._id, update);

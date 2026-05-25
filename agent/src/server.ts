@@ -3,7 +3,7 @@ import http from "http";
 import { fileURLToPath } from "url";
 import { ObjectId } from "mongodb";
 import { analyzeRun } from "./tools/signals.js";
-import { closeMongoClient, getRun, updateRunWithAnalysis } from "./tools/runs.js";
+import { closeMongoClient, getRun, persistSignalMemoryForRun, updateRunWithAnalysis } from "./tools/runs.js";
 import type { ProcessRunResult } from "./schemas.js";
 
 const RUNTIME = "google-cloud-adk";
@@ -80,6 +80,14 @@ async function handleProcessRun(req: http.IncomingMessage, res: http.ServerRespo
     writeJson(res, 500, { ok: false, error: "Analysis failed" });
     return;
   }
+  try {
+    await persistSignalMemoryForRun(run, result);
+  } catch (error) {
+    console.error("[signalgen-agent] signal memory persistence failed for run", runId, error);
+    writeJson(res, 500, { ok: false, error: "Signal memory persistence failed" });
+    return;
+  }
+
   await updateRunWithAnalysis(result);
 
   writeJson(res, 200, {

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { processAgentTick, type AgentTickStore } from "@/lib/agent-tick";
 import { callHostedAgent, getHostedAgentConfig } from "@/lib/hosted-agent-client";
 import { getSignalGenDb } from "@/lib/mongodb";
+import { buildMongoSignalMemoryStore } from "@/lib/signal-memory-store";
 import type { SignalGenRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
 
     const db = await getSignalGenDb();
     const collection = db.collection("runs");
+    const signalMemoryStore = buildMongoSignalMemoryStore(db, collection);
 
     const store: AgentTickStore = {
       async listPendingRuns(limit, targetRunId) {
@@ -59,6 +61,7 @@ export async function POST(request: Request) {
 
         return response.modifiedCount === 1;
       },
+      ...signalMemoryStore,
     };
 
     const result = await processAgentTick(store, { limit: 5, runId });

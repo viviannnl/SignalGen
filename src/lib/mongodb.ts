@@ -24,6 +24,10 @@ if (process.env.NODE_ENV === "development") {
   clientPromise = client.connect();
 }
 
+export async function getSignalGenClient() {
+  return clientPromise;
+}
+
 export async function getSignalGenDb() {
   const client = await clientPromise;
   return client.db("signalgen");

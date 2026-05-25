@@ -128,6 +128,89 @@ describe("processAgentTick", () => {
     expect(updatedRuns[0].signalClusters?.[0].decision).toBe("propose_plan");
   });
 
+  it("projects analyzed clusters into signal memory when the store supports signal persistence", async () => {
+    const persistSignalMemory = vi.fn(async () => undefined);
+    const store: AgentTickStore = {
+      listPendingRuns: vi.fn(async () => [makeRun({ workspaceId: "ws-1" })]),
+      updateRunAnalysis: vi.fn(async () => true),
+      listSignals: vi.fn(async () => []),
+      listPlans: vi.fn(async () => []),
+      persistSignalMemory,
+    };
+    const agentRuntime = {
+      kind: "adk" as const,
+      analyzeRun: vi.fn(async () => ({
+        status: "plan_ready" as const,
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        processedAt: "2026-01-01T00:01:00.000Z",
+        signalClusters: [
+          {
+            id: "bug-2",
+            type: "bug" as const,
+            title: "Repeated bug reports detected",
+            summary: "2 related comments classified as bug.",
+            evidenceCommentIds: ["comment-1", "comment-2"],
+            severity: "high" as const,
+            frequency: 2,
+            confidence: 0.9,
+            decision: "propose_plan" as const,
+            rationale: "Evidence is strong enough.",
+          },
+        ],
+        signal: { title: "Repeated bug reports detected", summary: "2 bug comments.", confidence: 0.9, evidence: [] },
+        plan: { recommendedChange: "Fix bug.", filesToChange: [], guardrails: [], acceptanceCriteria: [] },
+      })),
+    };
+
+    await processAgentTick(store, { agentRuntime });
+
+    expect(store.listSignals).toHaveBeenCalledWith("ws-1");
+    expect(store.listPlans).toHaveBeenCalledWith("ws-1");
+    expect(persistSignalMemory).toHaveBeenCalledOnce();
+    const [savedRun, projection] = persistSignalMemory.mock.calls[0];
+    expect(savedRun.workspaceId).toBe("ws-1");
+    expect(projection.evidenceItems).toHaveLength(1);
+    expect(projection.signalsToCreate).toHaveLength(1);
+    expect(projection.plansToCreate).toHaveLength(1);
+  });
+
+  it("does not mark the run processed when signal memory persistence fails", async () => {
+    const store: AgentTickStore = {
+      listPendingRuns: vi.fn(async () => [makeRun({ workspaceId: "ws-1" })]),
+      updateRunAnalysis: vi.fn(async () => true),
+      listSignals: vi.fn(async () => []),
+      listPlans: vi.fn(async () => []),
+      persistSignalMemory: vi.fn(async () => {
+        throw new Error("signal persistence failed");
+      }),
+    };
+    const agentRuntime = {
+      kind: "adk" as const,
+      analyzeRun: vi.fn(async () => ({
+        status: "plan_ready" as const,
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        processedAt: "2026-01-01T00:01:00.000Z",
+        signalClusters: [
+          {
+            id: "bug-2",
+            type: "bug" as const,
+            title: "Repeated bug reports detected",
+            summary: "2 related comments classified as bug.",
+            evidenceCommentIds: ["comment-1", "comment-2"],
+            severity: "high" as const,
+            frequency: 2,
+            confidence: 0.9,
+            decision: "propose_plan" as const,
+            rationale: "Evidence is strong enough.",
+          },
+        ],
+      })),
+    };
+
+    await expect(processAgentTick(store, { agentRuntime })).rejects.toThrow("signal persistence failed");
+    expect(store.updateRunAnalysis).not.toHaveBeenCalled();
+  });
+
   it("can target the newly created run id instead of only the oldest pending backlog", async () => {
     await withoutGeminiApiKey(async () => {
       const store: AgentTickStore = {

@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { applyFounderDecision, FounderDecisionError } from "@/lib/founder-decision";
-import { getSignalGenDb } from "@/lib/mongodb";
+import { getSignalGenClient, getSignalGenDb } from "@/lib/mongodb";
 import type { FounderDecisionAction, SignalGenRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -47,17 +47,46 @@ export async function POST(request: Request, context: DecisionRouteContext) {
       decidedBy: "dashboard_founder",
     });
 
-    const response = await collection.findOneAndUpdate(
-      { _id: objectId, status: "plan_ready" },
-      { $set: update },
-      { returnDocument: "after" },
-    );
+    const client = await getSignalGenClient();
+    const session = client.startSession();
+    let decidedRun: SignalGenRun | null = null;
+    try {
+      await session.withTransaction(async () => {
+        const response = await collection.findOneAndUpdate(
+          { _id: objectId, status: "plan_ready" },
+          { $set: update },
+          { returnDocument: "after", session },
+        );
 
-    if (!response) {
+        if (!response) return;
+
+        decidedRun = serializeRun(response);
+        const signalStatus = update.status;
+        const planStatus = body.action === "approve" ? "approved" : "rejected";
+        const signals = await db.collection("signals").find({ "evidenceItems.runId": runId }, { session }).toArray();
+        const signalIds = signals.map((signal) => signal._id?.toString()).filter((id): id is string => Boolean(id));
+        if (signalIds.length > 0) {
+          await db.collection("signals").updateMany(
+            { "evidenceItems.runId": runId },
+            { $set: { status: signalStatus, updatedAt: update.updatedAt } },
+            { session },
+          );
+          await db.collection("plans").updateMany(
+            { signalId: { $in: signalIds }, status: { $ne: "rejected" } },
+            { $set: { status: planStatus, approvalDecision: decidedRun.founderDecision, updatedAt: update.updatedAt } },
+            { session },
+          );
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
+
+    if (!decidedRun) {
       return NextResponse.json({ ok: false, error: "Run could not be decided because it is no longer plan-ready." }, { status: 409 });
     }
 
-    return NextResponse.json({ ok: true, run: serializeRun(response) });
+    return NextResponse.json({ ok: true, run: decidedRun });
   } catch (error) {
     if (error instanceof FounderDecisionError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: error.statusCode });
