@@ -27,18 +27,20 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
 - M8 guarded implementation scaffold exists:
   - implementation jobs can be queued/simulated,
   - real repo writes/PR creation are not enabled by default.
-- Real GitHub PR automation M1–M2 are complete on the `feat/real-github-pr-automation` branch:
+- Real GitHub PR automation M1–M3 are complete on the `feat/real-github-pr-automation` branch:
   - security/product spec exists in `docs/github-pr-automation-spec.md`,
   - workspace-scoped repo connection, implementation job, and audit log types exist,
   - mocked repo connection API routes and tests exist,
-  - GitHub App install URL/callback enablement is now being added behind signed state and disabled write capabilities.
+  - production GitHub App install URL/callback routes are deployed behind signed state,
+  - a GitHub App named `SignalGen Product Loop` is installed on Vivian's personal GitHub account with all-repositories access and code/issues/pull-request write permissions,
+  - callback completion still leaves SignalGen repo-write capabilities disabled until repo selection, persistence, workspace/auth checks, and implementation executor gates are complete.
 - Workspace scaffold exists:
   - workspace fields and demo/backward-compatible behavior exist,
   - real production auth/workspace membership is not fully wired yet.
 
 ### Important current limitation
 
-SignalGen is not yet allowed to modify a real code repository. The product can analyze, remember, plan, queue/simulate implementation intent, and begin the GitHub App installation handshake, but real branch/commit/push/PR automation remains gated until auth, workspace ownership, selected-repo permissions, founder approval, auditability, and a sandbox smoke test are production-grade.
+SignalGen is not yet able to let a normal user connect their intended repository end-to-end. The current live GitHub App installation belongs to Vivian's personal GitHub account because Vivian completed GitHub's owner/sudo flow while signed in as `@viviannnl`; it is not a generic user login flow. The product can analyze, remember, plan, queue/simulate implementation intent, and receive a GitHub App installation callback in production, but it does not yet persist the installation/repo selection into a workspace or expose a dashboard repo picker. Real branch/commit/push/PR automation remains gated until auth, workspace ownership, repository selection/persistence, founder approval, auditability, and a sandbox smoke test are production-grade.
 
 ---
 
@@ -66,7 +68,7 @@ Pause for explicit Vivian/founder approval before any of these actions:
 
 1. Production deployment or production environment variable changes.
 2. Auth-provider production setup or account-level permission changes.
-3. GitHub App/OAuth installation or granting live repository permissions, except the 2026-05-25 approved work to add and test a least-privilege GitHub App install handshake for selected repos. Real repo-write capability still requires a separate approval.
+3. GitHub App/OAuth installation or granting live repository permissions, except explicitly approved work. On 2026-05-25 Vivian approved generating GitHub App credentials, changing production env vars, deploying production install/callback routes, enabling repo write permissions, and selecting all repos for Vivian's installation. Real branch/commit/push/PR creation still requires the implementation gates below.
 4. Real external-repo branch/commit/push/PR creation.
 5. Production database migrations or destructive production database writes.
 6. Reading, printing, or sharing secret values.
@@ -89,16 +91,19 @@ Let SignalGen safely create branches, commits, and pull requests in a user's con
 
 ### Current state
 
-M8 created a guarded implementation/PR automation scaffold. M1–M2 of the real GitHub PR automation track are now complete locally, and A3 GitHub App installation enablement is the active milestone.
+M8 created a guarded implementation/PR automation scaffold. M1–M3 of the real GitHub PR automation track are now complete on the branch and production has the GitHub App install/callback route deployed. The next active milestone is persisting installation metadata and adding user-visible repository selection/connection status.
 
 Current behavior:
 
-- Real GitHub PR creation is disabled.
+- Real GitHub PR creation is disabled in code.
 - Implementation jobs are queued/simulated.
 - The product has a placeholder path for implementation intent and job status.
 - Workspace-scoped repo connection domain helpers and mocked API routes exist.
-- GitHub App install redirect/callback routes are being enabled with signed state, but callback completion leaves capabilities disabled until repository verification and explicit write-capability approval.
-- Existing guardrails should prevent repo writing without explicit approval and repo capability.
+- Production `/api/github/install` redirects to the `SignalGen Product Loop` GitHub App with signed state.
+- Production `/api/github/install/callback` validates signed state and installation id, then returns installation metadata with all SignalGen repo-write capabilities disabled.
+- The live installation currently belongs to Vivian's personal GitHub account (`@viviannnl`) and has all-repositories GitHub-side access. This means Vivian's repos are available to the GitHub App, but SignalGen has not yet recorded which repo the workspace intends to use.
+- A normal future user has not connected their own GitHub account yet; there is no in-app login/session flow or dashboard repo picker.
+- Existing guardrails should prevent repo writing without explicit approval, workspace/repo connection, and repo capability.
 
 ### Required before enabling real PR automation
 
@@ -174,14 +179,31 @@ Required fields:
 - `createdByUserId`
 - `createdAt` / `updatedAt`
 
-#### A3. Add GitHub App connection flow — active now
+#### A3. Add GitHub App connection flow — production callback deployed, repo selection next
 
-- Create/configure a least-privilege GitHub App manually first.
-- Add signed install redirect route: `/api/github/install`.
-- Add installation callback route: `/api/github/install/callback`.
-- Store/return installation metadata without storing raw secret values in logs or API responses.
-- Keep `pr_creation`, `branch_push`, and `issue_creation` disabled after callback until repository selection, workspace membership, approval, and sandbox verification are complete.
-- Add dashboard connection status.
+Completed on `feat/real-github-pr-automation`:
+
+- Created/configured the `SignalGen Product Loop` GitHub App.
+- Generated private key/client secret and configured production env without printing secret values.
+- Deployed signed install redirect route: `/api/github/install`.
+- Deployed installation callback route: `/api/github/install/callback`.
+- Verified production callback accepts a valid signed state and installation id.
+- Enabled GitHub-side repository permissions for Vivian's installation: all repositories plus code/issues/pull-request read/write.
+- Kept SignalGen's internal `pr_creation`, `branch_push`, and `issue_creation` capabilities disabled after callback.
+
+Important distinction:
+
+- The current installation is **Vivian's GitHub installation**, because Vivian completed the GitHub App installation while signed in as `@viviannnl`.
+- This does **not** mean arbitrary users have connected GitHub.
+- A future user still needs an authenticated SignalGen session, workspace context, install callback persistence, and a repo picker before SignalGen can know their intended repo.
+
+Next A3 sub-milestone:
+
+- Persist GitHub installation metadata to a workspace-scoped collection.
+- Add dashboard connection status: disconnected / install started / installed but repo not selected / connected.
+- Add repo selection UI backed by GitHub installation repositories.
+- Store selected owner/repo/default branch/installation id in `repo_connections`.
+- Keep write capabilities disabled until the selected repo is verified and an approved implementation job passes all gates.
 
 #### A4. Add approved implementation executor
 
