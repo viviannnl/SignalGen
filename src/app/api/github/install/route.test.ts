@@ -30,6 +30,8 @@ describe("/api/github/install", () => {
   });
 
   it("fails closed when GitHub App env is missing", async () => {
+    vi.stubEnv("SIGNALGEN_GITHUB_APP_SLUG", "");
+    vi.stubEnv("SIGNALGEN_GITHUB_APP_STATE_SECRET", "");
     const { GET } = await import("./route");
 
     const response = await GET(new Request("http://localhost/api/github/install"));
