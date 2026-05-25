@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { resolveWorkspaceId } from "@/lib/workspace";
-
+import { createRepoConnection, listRepoConnectionsByWorkspace } from "@/lib/repo-connection-db";
 import { buildDisabledRepoConnection } from "../../../lib/repo-connection";
-import type { RepoConnection } from "../../../lib/types";
+import type { RepoConnection } from "@/lib/types";
+import { resolveWorkspaceId } from "@/lib/workspace";
 
 type RepoConnectionsListResponse = {
   connections: RepoConnection[];
@@ -17,19 +17,29 @@ type RepoConnectionErrorResponse = {
   error: string;
 };
 
-const repoConnectionsById = new Map<string, RepoConnection>();
-
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-export async function GET(request: Request): Promise<NextResponse<RepoConnectionsListResponse>> {
-  const workspaceId = resolveWorkspaceId(request);
-  const connections = [...repoConnectionsById.values()].filter(
-    (connection) => connection.workspaceId === workspaceId,
-  );
+function logRepoConnectionError(message: string, error: unknown) {
+  console.error(message, { errorName: error instanceof Error ? error.name : typeof error });
+}
 
-  return NextResponse.json<RepoConnectionsListResponse>({ connections });
+export async function GET(
+  request: Request,
+): Promise<NextResponse<RepoConnectionsListResponse | RepoConnectionErrorResponse>> {
+  const workspaceId = resolveWorkspaceId(request);
+
+  try {
+    const connections = await listRepoConnectionsByWorkspace(workspaceId);
+    return NextResponse.json<RepoConnectionsListResponse>({ connections });
+  } catch (error) {
+    logRepoConnectionError("Failed to list repo connections", error);
+    return NextResponse.json<RepoConnectionErrorResponse>(
+      { error: "Repo connections could not be loaded. Please try again." },
+      { status: 503 },
+    );
+  }
 }
 
 export async function POST(
@@ -48,12 +58,18 @@ export async function POST(
   }
 
   const workspaceId = resolveWorkspaceId(request);
-  const connectionId = crypto.randomUUID();
-  const connection: RepoConnection = {
-    ...buildDisabledRepoConnection(workspaceId, owner.trim(), repo.trim(), workspaceId),
-    _id: connectionId,
-  };
-  repoConnectionsById.set(connectionId, connection);
 
-  return NextResponse.json<RepoConnectionCreateResponse>({ connection }, { status: 201 });
+  try {
+    const connection = await createRepoConnection(
+      buildDisabledRepoConnection(workspaceId, owner.trim(), repo.trim(), workspaceId),
+    );
+
+    return NextResponse.json<RepoConnectionCreateResponse>({ connection }, { status: 201 });
+  } catch (error) {
+    logRepoConnectionError("Failed to create repo connection", error);
+    return NextResponse.json<RepoConnectionErrorResponse>(
+      { error: "Repo connection could not be saved. Please try again." },
+      { status: 503 },
+    );
+  }
 }

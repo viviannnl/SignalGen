@@ -2,11 +2,17 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import { buildGitHubAppInstallState } from "../../../../../lib/github-app-install";
 
+const mockUpsert = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/github-installation-db", () => ({
+  upsertGitHubInstallation: mockUpsert,
+}));
+
 vi.mock("@/lib/workspace", () => ({
   resolveWorkspaceId: () => "workspace-test",
 }));
 
-const SECRET = "test-state-secret-with-enough-length";
+const SECRET = "test-s...ngth";
 const NOW = "2026-05-25T13:00:00.000Z";
 
 function stubGitHubAppEnv() {
@@ -29,10 +35,38 @@ describe("/api/github/install/callback", () => {
     vi.unstubAllEnvs();
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));
+    mockUpsert.mockReset();
+    mockUpsert.mockResolvedValue(undefined);
   });
 
-  it("accepts a valid GitHub App installation callback without enabling write capabilities", async () => {
+  it("persists a valid GitHub App installation callback and redirects to the dashboard", async () => {
     stubGitHubAppEnv();
+    const { GET } = await import("./route");
+
+    const response = await GET(
+      new Request(
+        `http://localhost/api/github/install/callback?installation_id=12345&setup_action=install&state=${encodeURIComponent(signedState())}`,
+      ),
+    );
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toContain("/dashboard");
+    expect(mockUpsert).toHaveBeenCalledOnce();
+    expect(mockUpsert).toHaveBeenCalledWith(
+      {
+        workspaceId: "workspace-test",
+        installationId: "12345",
+        setupAction: "install",
+        installedAt: NOW,
+        status: "active",
+      },
+      NOW,
+    );
+  });
+
+  it("returns 503 without exposing details when installation persistence fails", async () => {
+    stubGitHubAppEnv();
+    mockUpsert.mockRejectedValue(new Error("mongo unavailable"));
     const { GET } = await import("./route");
 
     const response = await GET(
@@ -42,21 +76,8 @@ describe("/api/github/install/callback", () => {
     );
     const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body).toEqual({
-      installation: {
-        installationId: "12345",
-        setupAction: "install",
-        workspaceId: "workspace-test",
-        status: "pending_repo_selection",
-        capabilities: {
-          pr_creation: false,
-          branch_push: false,
-          issue_creation: false,
-        },
-      },
-      message: "GitHub App installation received. Select and verify a repository before any write capability can be enabled.",
-    });
+    expect(response.status).toBe(503);
+    expect(body).toEqual({ error: "GitHub App installation could not be saved. Please try again." });
   });
 
   it("rejects a callback with missing installation_id", async () => {

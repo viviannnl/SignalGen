@@ -1,22 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { upsertGitHubInstallation } from "@/lib/github-installation-db";
+
 import {
-  DISABLED_GITHUB_INSTALL_CAPABILITIES,
   getGitHubAppStateSecret,
   parseGitHubAppInstallState,
   readGitHubAppInstallConfig,
 } from "../../../../../lib/github-app-install";
-
-type GitHubAppInstallCallbackResponse = {
-  installation: {
-    installationId: string;
-    setupAction: "install" | "update";
-    workspaceId: string;
-    status: "pending_repo_selection";
-    capabilities: typeof DISABLED_GITHUB_INSTALL_CAPABILITIES;
-  };
-  message: string;
-};
 
 type GitHubAppInstallCallbackErrorResponse = {
   error: string;
@@ -24,9 +14,7 @@ type GitHubAppInstallCallbackErrorResponse = {
   reason?: string;
 };
 
-export async function GET(
-  request: Request,
-): Promise<NextResponse<GitHubAppInstallCallbackResponse | GitHubAppInstallCallbackErrorResponse>> {
+export async function GET(request: Request): Promise<NextResponse<GitHubAppInstallCallbackErrorResponse> | Response> {
   const config = readGitHubAppInstallConfig();
   const stateSecret = getGitHubAppStateSecret();
 
@@ -81,15 +69,28 @@ export async function GET(
     );
   }
 
-  return NextResponse.json<GitHubAppInstallCallbackResponse>({
-    installation: {
-      installationId,
-      setupAction,
-      workspaceId: parsedState.value.workspaceId,
-      status: "pending_repo_selection",
-      capabilities: { ...DISABLED_GITHUB_INSTALL_CAPABILITIES },
-    },
-    message:
-      "GitHub App installation received. Select and verify a repository before any write capability can be enabled.",
-  });
+  const now = new Date().toISOString();
+
+  try {
+    await upsertGitHubInstallation(
+      {
+        workspaceId: parsedState.value.workspaceId,
+        installationId,
+        setupAction,
+        installedAt: now,
+        status: "active",
+      },
+      now,
+    );
+  } catch (error) {
+    console.error("GitHub App installation persistence failed", {
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return NextResponse.json<GitHubAppInstallCallbackErrorResponse>(
+      { error: "GitHub App installation could not be saved. Please try again." },
+      { status: 503 },
+    );
+  }
+
+  return NextResponse.redirect(new URL("/dashboard", request.url), 302);
 }
