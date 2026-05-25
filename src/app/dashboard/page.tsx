@@ -533,7 +533,7 @@ export default function DashboardPage() {
                         <span className="text-xs text-slate-400">
                           Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {new Date(signal.currentPlan.approvalDecision.decidedAt).toLocaleString()}
                         </span>
-                      ) : signal.currentPlan ? (
+                      ) : signal.status === "plan_ready" && signal.currentPlan ? (
                         <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
                       ) : null}
                     </div>
