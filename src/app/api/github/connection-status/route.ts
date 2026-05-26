@@ -8,7 +8,7 @@ import { resolveWorkspaceId } from "@/lib/workspace";
 type ConnectionStatusResponse =
   | { status: "disconnected" }
   | { status: "installed"; installationId: string }
-  | { status: "connected"; installationId: string; repoConnection: RepoConnection };
+  | { status: "connected"; installationId: string; repoConnection: RepoConnection; repoConnections: RepoConnection[] };
 
 type ConnectionStatusErrorResponse = {
   error: string;
@@ -31,7 +31,8 @@ export async function GET(
     }
 
     const connections = await listRepoConnectionsByWorkspace(workspaceId);
-    const connected = connections.find((connection) => connection.status === "connected");
+    const connectedConnections = connections.filter((connection) => connection.status === "connected");
+    const connected = connectedConnections[0];
 
     if (!connected) {
       return NextResponse.json<ConnectionStatusResponse>({
@@ -44,6 +45,7 @@ export async function GET(
       status: "connected",
       installationId: installation.installationId,
       repoConnection: connected,
+      repoConnections: connectedConnections,
     });
   } catch (error) {
     logConnectionStatusError("Failed to load GitHub connection status", error);

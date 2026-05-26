@@ -13,7 +13,7 @@ type GitHubStatus =
   | { status: "error"; message: string }
   | { status: "disconnected" }
   | { status: "installed"; installationId: string }
-  | { status: "connected"; installationId: string; repoConnection: RepoConnection };
+  | { status: "connected"; installationId: string; repoConnection: RepoConnection; repoConnections?: RepoConnection[] };
 
 export default function DashboardPage() {
   const [runs, setRuns] = useState<ApiRun[]>([]);
@@ -736,19 +736,43 @@ function GitHubPanel({
     );
   }
 
+  const connectedRepos =
+    Array.isArray(githubStatus.repoConnections) && githubStatus.repoConnections.length > 0
+      ? githubStatus.repoConnections
+      : [githubStatus.repoConnection];
+  const enabledForDraftPrs = connectedRepos.filter(
+    (connection) => connection.capabilities.branch_push && connection.capabilities.pr_creation,
+  );
+  const enabledForIssues = connectedRepos.filter((connection) => connection.capabilities.issue_creation);
+
   return (
     <div>
       <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
-      <h2 className="mt-3 text-2xl font-semibold">Connected repository</h2>
-      <div className="mt-5 grid gap-3 rounded-3xl bg-slate-950/70 p-5 text-sm text-slate-300 md:grid-cols-2">
-        <p>Owner: {githubStatus.repoConnection.owner}</p>
-        <p>Repo: {githubStatus.repoConnection.repo}</p>
-        <p>Default branch: {githubStatus.repoConnection.defaultBranch}</p>
-        <p>Installation ID: {githubStatus.installationId}</p>
-      </div>
-      <p className="mt-4 text-sm leading-6 text-slate-300">
-        Repo write capabilities are disabled. Implementation gates will be wired in a later milestone.
+      <h2 className="mt-3 text-2xl font-semibold">Connected repositories</h2>
+      <p className="mt-3 text-sm leading-6 text-slate-300">
+        {enabledForDraftPrs.length} of {connectedRepos.length} connected repos can receive SignalGen branches, commits, and
+        draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
       </p>
+      <div className="mt-5 grid gap-3">
+        {connectedRepos.map((connection) => {
+          const canCreateDraftPr = connection.capabilities.branch_push && connection.capabilities.pr_creation;
+          return (
+            <div
+              key={connection._id ?? `${connection.owner}/${connection.repo}`}
+              className="grid gap-3 rounded-3xl bg-slate-950/70 p-5 text-sm text-slate-300 md:grid-cols-2"
+            >
+              <p>Owner: {connection.owner}</p>
+              <p>Repo: {connection.repo}</p>
+              <p>Default branch: {connection.defaultBranch}</p>
+              <p>Installation ID: {githubStatus.installationId}</p>
+              <p className={canCreateDraftPr ? "text-emerald-200" : "text-amber-200"}>
+                Draft PR automation: {canCreateDraftPr ? "Enabled" : "Disabled"}
+              </p>
+              <p>Issues: {connection.capabilities.issue_creation ? "Enabled" : "Disabled"}</p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

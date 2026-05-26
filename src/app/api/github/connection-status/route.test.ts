@@ -93,17 +93,35 @@ describe("/api/github/connection-status", () => {
     expect(mockListRepoConnectionsByWorkspace).toHaveBeenCalledWith("workspace-test");
   });
 
-  it("returns connected when installation and connected repo connection exist", async () => {
-    const connection = makeRepoConnection();
+  it("returns all connected repo connections when installation and connected repo connections exist", async () => {
+    const firstConnection = makeRepoConnection({
+      _id: "connection-1",
+      repo: "ai-cover-letter",
+      capabilities: { pr_creation: true, branch_push: true, issue_creation: false },
+    });
+    const secondConnection = makeRepoConnection({
+      _id: "connection-2",
+      repo: "SignalGen",
+      capabilities: { pr_creation: true, branch_push: true, issue_creation: false },
+    });
     mockFindGitHubInstallationByWorkspace.mockResolvedValue(makeInstallation());
-    mockListRepoConnectionsByWorkspace.mockResolvedValue([makeRepoConnection({ status: "disconnected" }), connection]);
+    mockListRepoConnectionsByWorkspace.mockResolvedValue([
+      makeRepoConnection({ status: "disconnected" }),
+      firstConnection,
+      secondConnection,
+    ]);
     const { GET } = await import("./route");
 
     const response = await GET(new Request("http://localhost/api/github/connection-status"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body).toEqual({ status: "connected", installationId: "12345", repoConnection: connection });
+    expect(body).toEqual({
+      status: "connected",
+      installationId: "12345",
+      repoConnection: firstConnection,
+      repoConnections: [firstConnection, secondConnection],
+    });
   });
 
   it("returns 503 on DB error", async () => {
