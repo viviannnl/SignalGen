@@ -2,7 +2,7 @@
 
 > **Canonical source of truth.** Use this document as the current long-term roadmap for SignalGen. Older dated plans in `docs/` are historical execution records; when product direction changes, update this file first.
 
-**Last updated:** 2026-05-25
+**Last updated:** 2026-05-26
 
 **Product thesis:** SignalGen is the memory layer of the founder's product iteration loop. It collects feedback/events, turns them into durable product signals, accumulates evidence, proposes plans only when evidence is strong enough, and eventually helps implement approved changes safely through audited PRs.
 
@@ -10,7 +10,7 @@
 
 ## 1. Current product checkpoint
 
-SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted worker path and first-class signal memory.
+SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted worker path, first-class signal memory, and repo-scoped dashboard/API workflows.
 
 ### Completed / mostly completed
 
@@ -24,9 +24,13 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
   - strong/actionable signals can become `plan_ready`,
   - first-class plans can be linked to signals.
 - Dashboard has an **All signals** view backed by `/api/signals`, with legacy run fallback.
-- M8 guarded implementation scaffold exists:
+- M8 / repo-scoped implementation scaffold is complete and deployed on `main` in commit `6bb7e3e`:
+  - connected repositories are visible in the dashboard repo picker,
+  - the founder must select one explicit repo before creating runs, signals, decisions, implementation jobs, or PR work,
+  - run/signal/decision/implementation/agent APIs fail closed without selected `repoConnectionId`,
+  - DB mutations for active workflows include workspace/repo predicates,
   - implementation jobs can be queued/simulated,
-  - real repo writes/PR creation are not enabled by default.
+  - real repo writes/PR creation remain guarded behind founder approval, repo capability flags, audit logs, and implementation gates.
 - Real GitHub PR automation M1–M4 are complete on the `feat/real-github-pr-automation` branch:
   - security/product spec exists in `docs/github-pr-automation-spec.md`,
   - workspace-scoped repo connection, implementation job, and audit log types exist,
@@ -36,11 +40,12 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
   - callback completion still leaves SignalGen repo-write capabilities disabled until repo selection, persistence, workspace/auth checks, and implementation executor gates are complete.
 - Workspace scaffold exists:
   - workspace fields and demo/backward-compatible behavior exist,
+  - repo-scoped reads/writes now use workspace/repo filters,
   - real production auth/workspace membership is not fully wired yet.
 
 ### Important current limitation
 
-SignalGen is not yet able to let a normal user connect their intended repository end-to-end. The current live GitHub App installation belongs to Vivian's personal GitHub account because Vivian completed GitHub's owner/sudo flow while signed in as `@viviannnl`; it is not a generic user login flow. The product can analyze, remember, plan, queue/simulate implementation intent, and receive a GitHub App installation callback in production, but it does not yet persist the installation/repo selection into a workspace or expose a dashboard repo picker. Real branch/commit/push/PR automation remains gated until auth, workspace ownership, repository selection/persistence, founder approval, auditability, and a sandbox smoke test are production-grade.
+SignalGen now lets the demo workspace view all GitHub App-installed repositories and requires one selected repo before active work. The current live GitHub App installation still belongs to Vivian's personal GitHub account because Vivian completed GitHub's owner/sudo flow while signed in as `@viviannnl`; it is not a generic user login flow. The product can analyze, remember, plan, queue/simulate implementation intent, persist repo selection in the dashboard, and receive a GitHub App installation callback in production. Real branch/commit/push/PR automation remains gated until real auth, workspace ownership, founder approval, auditability, and a sandbox smoke test are production-grade.
 
 ---
 
@@ -91,18 +96,18 @@ Let SignalGen safely create branches, commits, and pull requests in a user's con
 
 ### Current state
 
-M8 created a guarded implementation/PR automation scaffold. M1–M4 of the real GitHub PR automation track are now complete on the `feat/real-github-pr-automation` branch: installation/repo metadata persistence, repository selection/status APIs and UI, gated first-class implementation jobs, mocked executor gates, audit logs, retry/failure handling, and a capability-disable kill switch are implemented. M5 remains: full verification, branch push, and one final PR.
+M8 and the repo-scoped GitHub App/dashboard path are complete on `main` in commit `6bb7e3e`. Installation/repo metadata persistence, repository selection/status APIs and UI, gated first-class implementation jobs, mocked executor gates, audit logs, retry/failure handling, capability-disable kill switch, and repo-scoped active workflows are implemented. Production verification confirmed the dashboard shows 21 connected repos, requires one selected repo, and fail-closes `/api/runs` and `/api/signals` without `repoConnectionId`. Real PR creation remains disabled unless all implementation gates pass.
 
 Current behavior:
 
-- Real GitHub PR creation is disabled in code.
-- Implementation jobs are queued/simulated.
-- The product has a placeholder path for implementation intent and job status.
-- Workspace-scoped repo connection domain helpers and mocked API routes exist.
+- Real GitHub PR creation remains disabled by default/gated by capability and approval checks.
+- Implementation jobs are queued/simulated unless all executor gates pass.
+- The dashboard shows connected repos and requires selecting one explicit repo before active work.
+- Workspace-scoped repo connection domain helpers and Mongo-backed API routes exist.
 - Production `/api/github/install` redirects to the `SignalGen Product Loop` GitHub App with signed state.
 - Production `/api/github/install/callback` validates signed state and installation id, then returns installation metadata with all SignalGen repo-write capabilities disabled.
-- The live installation currently belongs to Vivian's personal GitHub account (`@viviannnl`) and has all-repositories GitHub-side access. This means Vivian's repos are available to the GitHub App, but SignalGen has not yet recorded which repo the workspace intends to use.
-- A normal future user has not connected their own GitHub account yet; there is no in-app login/session flow or dashboard repo picker.
+- The live installation currently belongs to Vivian's personal GitHub account (`@viviannnl`) and has all-repositories GitHub-side access. SignalGen can list these repos and persist the selected demo workspace repo in URL/localStorage and server-side `repo_connections`.
+- A normal future user has not connected their own GitHub account yet; there is no production auth/session/workspace membership flow.
 - Existing guardrails should prevent repo writing without explicit approval, workspace/repo connection, and repo capability.
 
 ### Required before enabling real PR automation
@@ -179,7 +184,7 @@ Required fields:
 - `createdByUserId`
 - `createdAt` / `updatedAt`
 
-#### A3. Add GitHub App connection flow — production callback deployed, repo selection next
+#### A3. Add GitHub App connection flow — production callback and repo picker deployed
 
 Completed on `feat/real-github-pr-automation`:
 
@@ -197,13 +202,14 @@ Important distinction:
 - This does **not** mean arbitrary users have connected GitHub.
 - A future user still needs an authenticated SignalGen session, workspace context, install callback persistence, and a repo picker before SignalGen can know their intended repo.
 
-Next A3 sub-milestone:
+A3 follow-up status after commit `6bb7e3e`:
 
-- Persist GitHub installation metadata to a workspace-scoped collection.
-- Add dashboard connection status: disconnected / install started / installed but repo not selected / connected.
-- Add repo selection UI backed by GitHub installation repositories.
-- Store selected owner/repo/default branch/installation id in `repo_connections`.
-- Keep write capabilities disabled until the selected repo is verified and an approved implementation job passes all gates.
+- GitHub installation metadata is persisted to workspace-scoped collections.
+- Dashboard connection status and connected repo list are live.
+- Repo selection UI is backed by GitHub installation repositories.
+- Selected owner/repo/default branch/installation id are stored in `repo_connections`.
+- Active workflows require one selected `repoConnectionId`.
+- Write capabilities remain guarded until the selected repo is verified and an approved implementation job passes all gates.
 
 #### A4. Add approved implementation executor
 
@@ -251,8 +257,10 @@ Make SignalGen production-grade for multiple users and workspaces, with reliable
 
 - Workspace scaffold exists.
 - Demo/backward-compatible workspace behavior exists.
+- Repo-scoped active workflows now filter by workspace + selected repo.
 - Real production auth provider is not fully wired.
-- Some routes may still depend on demo workspace behavior for local/hackathon usability.
+- Some routes still intentionally depend on demo workspace behavior for local/hackathon usability.
+- B1 auth provider decision record is created in `docs/2026-05-26-auth-workspaces-decision.md`: use Clerk first for authentication and organization/workspace identity, while keeping GitHub App installation as the repo-write permission model.
 
 ### Required before production multi-user launch
 
@@ -292,30 +300,23 @@ Make SignalGen production-grade for multiple users and workspaces, with reliable
 
 ### Suggested implementation phases
 
-#### B1. Auth provider decision record
+#### B1. Auth provider decision record — complete
 
-Create a short decision doc comparing providers and choose one. Include:
+Decision record: `docs/2026-05-26-auth-workspaces-decision.md`.
 
-- setup complexity,
-- workspace/org support,
-- GitHub OAuth/GitHub App compatibility,
-- local dev story,
-- cost,
-- production security posture.
+Decision: use Clerk first for production authentication and organization/workspace identity. Keep GitHub App installation as the repo-write permission model. SignalGen will map Clerk users/orgs into internal SignalGen users/workspaces/memberships so every product object remains workspace-scoped.
 
-#### B2. Central session/workspace helper
+#### B2. Central session/workspace helper — started
 
-Create one canonical helper, for example:
+Initial scaffold exists in `src/lib/auth.ts` with regression tests in `src/lib/auth.test.ts`. It defines:
 
-- `src/lib/auth.ts`
-- `src/lib/workspace.ts`
+- `AuthContext`,
+- `AuthContextError`,
+- `requireAuthContext(request, { allowDemo })`,
+- explicit demo fallback gated by `SIGNALGEN_ALLOW_DEMO_AUTH`,
+- trusted test headers for access-boundary tests outside production only.
 
-It should return:
-
-- current user,
-- selected workspace,
-- role/membership,
-- demo-mode fallback only when explicitly allowed.
+Next B2 implementation step: install/configure Clerk and wire Clerk session/org data into `requireAuthContext()` while preserving fail-closed production behavior.
 
 #### B3. Route-by-route workspace enforcement
 
@@ -391,8 +392,8 @@ The safest order is:
    - Keep current signal UI consistent while planning larger work.
 
 2. **Real auth/workspaces foundation**
-   - Choose provider.
-   - Implement session/workspace helper.
+   - Provider chosen: Clerk (`docs/2026-05-26-auth-workspaces-decision.md`).
+   - Implement session/workspace helper: scaffold started in `src/lib/auth.ts`; next wire Clerk session/org data.
    - Enforce workspace filtering route-by-route.
    - Add access-boundary tests.
 
@@ -420,21 +421,15 @@ The safest order is:
 
 ### Auth provider
 
-Options to evaluate:
+Decision: use Clerk first. See `docs/2026-05-26-auth-workspaces-decision.md`.
 
-- Clerk
-- Auth.js/NextAuth
-- Supabase Auth
+Implementation still needs:
 
-Decision criteria:
-
-- easiest Next.js integration,
-- workspace/org support,
-- secure session handling,
-- GitHub identity compatibility,
-- cost,
-- local development flow,
-- export/lock-in risk.
+- Clerk project/app setup,
+- env vars configured without exposing secret values,
+- Clerk-backed `requireAuthContext()` helper (scaffold exists in `src/lib/auth.ts`),
+- route-by-route migration from demo workspace fallback to authenticated workspace membership,
+- access-boundary tests.
 
 ### GitHub integration model
 
@@ -487,6 +482,7 @@ Manual checks when UI changes:
 
 Historical docs remain useful, but this file is the current roadmap source of truth.
 
+- `docs/2026-05-26-auth-workspaces-decision.md` — current Gap B provider decision record.
 - `docs/2026-05-23-roadmap-execution-plan.md` — execution ledger for the M1-M8 Claude/Hermes loop.
 - `docs/2026-05-23-hosted-google-agent-engine-deployment-plan.md` — detailed hosted-agent architecture notes.
 - `docs/technical-design.md` — broader system design reference.
