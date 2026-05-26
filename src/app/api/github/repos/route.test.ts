@@ -1,5 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "workspace-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockFindGitHubInstallationByWorkspace = vi.hoisted(() => vi.fn());
 const mockListInstallationRepos = vi.hoisted(() => vi.fn());
 
@@ -46,7 +60,7 @@ describe("/api/github/repos", () => {
   it("returns 404 when no installation exists for the workspace", async () => {
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/github/repos"));
+    const response = await GET(authedRequest("http://localhost/api/github/repos"));
     const body = await response.json();
 
     expect(response.status).toBe(404);
@@ -69,7 +83,7 @@ describe("/api/github/repos", () => {
     mockListInstallationRepos.mockResolvedValue(repos);
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/github/repos"));
+    const response = await GET(authedRequest("http://localhost/api/github/repos"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -82,7 +96,7 @@ describe("/api/github/repos", () => {
     mockListInstallationRepos.mockRejectedValue(new Error("token exchange not implemented"));
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/github/repos"));
+    const response = await GET(authedRequest("http://localhost/api/github/repos"));
     const body = await response.json();
 
     expect(response.status).toBe(503);
@@ -93,7 +107,7 @@ describe("/api/github/repos", () => {
     mockFindGitHubInstallationByWorkspace.mockRejectedValue(new Error("mongo unavailable"));
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/github/repos"));
+    const response = await GET(authedRequest("http://localhost/api/github/repos"));
     const body = await response.json();
 
     expect(response.status).toBe(503);

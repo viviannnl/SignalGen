@@ -1,8 +1,10 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 import { getSignalGenDb } from "@/lib/mongodb";
-import { resolveRepoConnectionId, resolveWorkspaceId } from "@/lib/workspace";
+import { resolveRepoConnectionId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -25,15 +27,14 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Invalid run id." }, { status: 400 });
   }
 
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
+
   const db = await getSignalGenDb();
-  const doc = await db.collection("runs").findOne({ _id: new ObjectId(runId), repoConnectionId });
+  const doc = await db.collection("runs").findOne({ _id: new ObjectId(runId), repoConnectionId, workspaceId });
 
   if (!doc) {
-    return NextResponse.json({ error: "Run not found." }, { status: 404 });
-  }
-
-  const workspaceId = resolveWorkspaceId(request);
-  if (doc.workspaceId && doc.workspaceId !== workspaceId) {
     return NextResponse.json({ error: "Run not found." }, { status: 404 });
   }
 

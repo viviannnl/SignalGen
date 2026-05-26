@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
+import { AuthControls } from "../auth-controls";
 import type { ProductSignal, RepoConnection, SignalGenRun, SignalPlan } from "@/lib/types";
 
 type ApiRun = SignalGenRun & { _id: string };
@@ -375,6 +376,8 @@ export default function DashboardPage() {
             Refresh
           </button>
         </nav>
+
+        <AuthControls />
 
         <div className="flex gap-1 self-start rounded-full border border-white/10 bg-white/[0.04] p-1" role="tablist" aria-label="Dashboard sections">
           <button

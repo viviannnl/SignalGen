@@ -1,6 +1,20 @@
 import { ObjectId } from "mongodb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "demo",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockSignalsFind = vi.fn();
 const mockPlansFind = vi.fn();
 const mockRunsFind = vi.fn();
@@ -115,7 +129,7 @@ describe("GET /api/signals", () => {
     mockFindToArray(mockPlansFind, []);
     mockFindToArray(mockRunsFind, []);
 
-    const response = await GET(new Request("http://localhost/api/signals?repoConnectionId=repo-123"));
+    const response = await GET(authedRequest("http://localhost/api/signals?repoConnectionId=repo-123"));
 
     expect(response.status).toBe(200);
     expect(mockSignalsFind).toHaveBeenCalledWith(expect.objectContaining({ repoConnectionId: "repo-123" }));
@@ -130,7 +144,7 @@ describe("GET /api/signals", () => {
       makeLegacyRun({ status: "processed", now }),
     ]);
 
-    const response = await GET(new Request("http://localhost/api/signals?repoConnectionId=repo-123"));
+    const response = await GET(authedRequest("http://localhost/api/signals?repoConnectionId=repo-123"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -150,7 +164,7 @@ describe("GET /api/signals", () => {
       makeLegacyRun({ status: "pr_created", now }),
     ]);
 
-    const response = await GET(new Request("http://localhost/api/signals?repoConnectionId=repo-123"));
+    const response = await GET(authedRequest("http://localhost/api/signals?repoConnectionId=repo-123"));
     const body = await response.json();
 
     expect(response.status).toBe(200);

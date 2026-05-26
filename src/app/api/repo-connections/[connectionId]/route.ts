@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 import { findRepoConnectionById, updateRepoConnection, type RepoConnectionUpdate } from "@/lib/repo-connection-db";
 import type { RepoConnection } from "@/lib/types";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 type RepoConnectionGetResponse = {
   connection: RepoConnection;
@@ -31,7 +32,9 @@ export async function GET(
   { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<NextResponse<RepoConnectionGetResponse | RepoConnectionErrorResponse>> {
   const { connectionId } = await params;
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const connection = await findRepoConnectionById(connectionId);
@@ -55,7 +58,9 @@ export async function PATCH(
   { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<NextResponse<RepoConnectionPatchResponse | RepoConnectionErrorResponse>> {
   const { connectionId } = await params;
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const body: unknown = await request.json().catch(() => ({}));

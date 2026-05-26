@@ -1,6 +1,20 @@
 import { ObjectId } from "mongodb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "ws-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockInsertOne = vi.hoisted(() => vi.fn());
 const mockRunsFind = vi.hoisted(() => vi.fn());
 
@@ -87,7 +101,7 @@ describe("/api/runs", () => {
 
   it("rejects run creation without an explicit repoConnectionId", async () => {
     const response = await POST(
-      new Request("http://localhost/api/runs", {
+      authedRequest("http://localhost/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comments: ["Please fix onboarding"] }),
@@ -102,7 +116,7 @@ describe("/api/runs", () => {
 
   it("stamps created runs with the selected repoConnectionId", async () => {
     const response = await POST(
-      new Request("http://localhost/api/runs", {
+      authedRequest("http://localhost/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repoConnectionId: "repo-123", comments: ["Please fix onboarding"] }),
@@ -118,7 +132,7 @@ describe("/api/runs", () => {
   it("filters listed runs to the selected repoConnectionId", async () => {
     mockFindToArray([]);
 
-    const response = await GET(new Request("http://localhost/api/runs?repoConnectionId=repo-123"));
+    const response = await GET(authedRequest("http://localhost/api/runs?repoConnectionId=repo-123"));
 
     expect(response.status).toBe(200);
     expect(mockRunsFind).toHaveBeenCalledWith(expect.objectContaining({ repoConnectionId: "repo-123" }));

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../../lib/api-auth";
+
 import { MockGitHubClient, createRealGitHubClientForInstallation, type GitHubClient } from "@/lib/github-client";
 import { executeImplementationJob } from "@/lib/implementation-executor";
 import { findImplementationJobById } from "@/lib/implementation-job-db";
 import { findRepoConnectionById } from "@/lib/repo-connection-db";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -21,14 +22,13 @@ export async function POST(
   { params }: RunRouteContext,
 ): Promise<NextResponse<{ success: boolean; gateFailure?: unknown; error?: string }>> {
   const { jobId } = await params;
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId, userId } = auth;
 
   try {
     const body: unknown = await request.json().catch(() => ({}));
-    const requestingUserId =
-      typeof body === "object" && body !== null && "requestingUserId" in body && typeof body.requestingUserId === "string"
-        ? body.requestingUserId
-        : "dashboard_founder";
+    const requestingUserId = userId;
 
     const job = await findImplementationJobById(jobId);
     if (!job || job.workspaceId !== workspaceId) {

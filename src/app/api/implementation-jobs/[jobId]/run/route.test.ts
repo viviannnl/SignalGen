@@ -1,5 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "ws-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockFindImplementationJobById = vi.hoisted(() => vi.fn());
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
 const mockExecuteImplementationJob = vi.hoisted(() => vi.fn());
@@ -65,7 +79,7 @@ describe("/api/implementation-jobs/[jobId]/run POST", () => {
   it("uses mock execution by default and does not mint a real GitHub token", async () => {
     const { POST } = await import("./route");
     const response = await POST(
-      new Request(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
+      authedRequest(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestingUserId: "user-1" }),
@@ -75,14 +89,14 @@ describe("/api/implementation-jobs/[jobId]/run POST", () => {
 
     expect(response.status).toBe(200);
     expect(mockCreateRealGitHubClientForInstallation).not.toHaveBeenCalled();
-    expect(mockExecuteImplementationJob.mock.calls[0]?.[1]).toMatchObject({ installationToken: null, requestingUserId: "user-1" });
+    expect(mockExecuteImplementationJob.mock.calls[0]?.[1]).toMatchObject({ installationToken: null, requestingUserId: "user-test" });
   });
 
   it("blocks real GitHub execution unless the global write flag is explicitly enabled", async () => {
     process.env.SIGNALGEN_ENABLE_REAL_GITHUB_WRITES = "false";
     const { POST } = await import("./route");
     const response = await POST(
-      new Request(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
+      authedRequest(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ executionMode: "real_github" }),
@@ -102,7 +116,7 @@ describe("/api/implementation-jobs/[jobId]/run POST", () => {
     mockFindRepoConnectionById.mockResolvedValue(makeRepoConnection({ workspaceId: "other-ws" }));
     const { POST } = await import("./route");
     const response = await POST(
-      new Request(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
+      authedRequest(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ executionMode: "real_github" }),
@@ -121,7 +135,7 @@ describe("/api/implementation-jobs/[jobId]/run POST", () => {
     process.env.SIGNALGEN_ENABLE_REAL_GITHUB_WRITES = "true";
     const { POST } = await import("./route");
     const response = await POST(
-      new Request(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
+      authedRequest(`http://localhost/api/implementation-jobs/${JOB_ID}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ executionMode: "real_github", requestingUserId: "user-1" }),
@@ -131,7 +145,7 @@ describe("/api/implementation-jobs/[jobId]/run POST", () => {
 
     expect(response.status).toBe(200);
     expect(mockCreateRealGitHubClientForInstallation).toHaveBeenCalledWith("install-123");
-    expect(mockExecuteImplementationJob.mock.calls[0]?.[1]).toMatchObject({ installationToken: "present", requestingUserId: "user-1" });
+    expect(mockExecuteImplementationJob.mock.calls[0]?.[1]).toMatchObject({ installationToken: "present", requestingUserId: "user-test" });
     expect(mockExecuteImplementationJob.mock.calls[0]?.[2]).toEqual({ kind: "real-client" });
   });
 });

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 import { findGitHubInstallationByWorkspace } from "@/lib/github-installation-db";
 import { listInstallationRepos, type GitHubRepo } from "@/lib/github-repos-client";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 type GitHubReposResponse = {
   repos: GitHubRepo[];
@@ -17,7 +18,9 @@ function logGitHubReposError(message: string, error: unknown) {
 }
 
 export async function GET(request: Request): Promise<NextResponse<GitHubReposResponse | GitHubReposErrorResponse>> {
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const installation = await findGitHubInstallationByWorkspace(workspaceId);

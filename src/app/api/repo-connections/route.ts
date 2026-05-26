@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../lib/api-auth";
+
 import { writeAuditLog } from "@/lib/audit-log-db";
 import { createRepoConnection, listRepoConnectionsByWorkspace } from "@/lib/repo-connection-db";
 import { buildDisabledRepoConnection } from "../../../lib/repo-connection";
 import type { AuditLog, RepoConnection } from "@/lib/types";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 type RepoConnectionsListResponse = {
   connections: RepoConnection[];
@@ -40,7 +41,9 @@ async function safeWriteAuditLog(entry: Omit<AuditLog, "_id">): Promise<void> {
 export async function GET(
   request: Request,
 ): Promise<NextResponse<RepoConnectionsListResponse | RepoConnectionErrorResponse>> {
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const connections = await listRepoConnectionsByWorkspace(workspaceId);
@@ -69,7 +72,9 @@ export async function POST(
     return NextResponse.json<RepoConnectionErrorResponse>({ error: "repo is required" }, { status: 400 });
   }
 
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const connection = await createRepoConnection(

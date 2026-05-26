@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ImplementationRecord, SignalGenRun } from "@/lib/types";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "demo",
+  "x-signalgen-test-role": "owner",
+};
+
 const mockFindOne = vi.fn();
 const mockFindOneAndUpdate = vi.fn();
 
@@ -60,7 +66,7 @@ function makeRun(overrides: Partial<SignalGenRun> = {}): DbRun {
 async function postImplement(runId = "64f0c1f2a3b4c5d6e7f80901") {
   return POST(new Request(`http://localhost/api/runs/${runId}/implement`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...AUTH_HEADERS, "Content-Type": "application/json" },
     body: JSON.stringify({ repoConnectionId: "repo-123" }),
   }), {
     params: Promise.resolve({ runId }),

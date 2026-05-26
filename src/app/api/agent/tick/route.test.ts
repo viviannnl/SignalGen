@@ -1,6 +1,20 @@
 import { ObjectId } from "mongodb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "ws-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockFindOne = vi.fn();
 const mockFind = vi.fn();
 const mockUpdateOne = vi.fn();
@@ -36,7 +50,7 @@ const { POST } = await import("./route");
 
 function postTick(body: unknown) {
   return POST(
-    new Request("http://localhost/api/agent/tick", {
+    authedRequest("http://localhost/api/agent/tick", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

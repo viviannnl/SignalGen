@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 import { findImplementationJobById } from "@/lib/implementation-job-db";
 import type { ImplementationJob } from "@/lib/types";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,9 @@ export async function GET(
   { params }: JobRouteContext,
 ): Promise<NextResponse<{ job: ImplementationJob } | { error: string }>> {
   const { jobId } = await params;
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const job = await findImplementationJobById(jobId);

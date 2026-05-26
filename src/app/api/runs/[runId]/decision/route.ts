@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../../lib/api-auth";
+
 import { applyFounderDecision, FounderDecisionError } from "@/lib/founder-decision";
 import { getSignalGenClient, getSignalGenDb } from "@/lib/mongodb";
 import type { FounderDecisionAction, SignalGenRun } from "@/lib/types";
@@ -26,6 +28,10 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
 
 export async function POST(request: Request, context: DecisionRouteContext) {
   try {
+    const auth = await getApiAuthContextOrResponse(request);
+    if (auth instanceof NextResponse) return auth;
+    const { workspaceId, userId } = auth;
+
     const { runId } = await context.params;
     if (!ObjectId.isValid(runId)) {
       return NextResponse.json({ ok: false, error: "Invalid run id." }, { status: 400 });
@@ -36,7 +42,7 @@ export async function POST(request: Request, context: DecisionRouteContext) {
     const db = await getSignalGenDb();
     const collection = db.collection("runs");
     const objectId = new ObjectId(runId);
-    const doc = await collection.findOne({ _id: objectId });
+    const doc = await collection.findOne({ _id: objectId, workspaceId });
 
     if (!doc) {
       return NextResponse.json({ ok: false, error: "Run not found." }, { status: 404 });
@@ -50,7 +56,7 @@ export async function POST(request: Request, context: DecisionRouteContext) {
     const update = applyFounderDecision(run, {
       action: body.action as FounderDecisionAction,
       note: body.note,
-      decidedBy: "dashboard_founder",
+      decidedBy: userId,
     });
 
     const client = await getSignalGenClient();

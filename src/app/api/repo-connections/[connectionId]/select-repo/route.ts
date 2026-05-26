@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../../lib/api-auth";
+
 import { writeAuditLog } from "@/lib/audit-log-db";
 import { findGitHubInstallationByWorkspace } from "@/lib/github-installation-db";
 import { findRepoConnectionById, updateRepoConnection } from "@/lib/repo-connection-db";
 import type { AuditLog, RepoConnection } from "@/lib/types";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 type RepoConnectionSelectResponse = {
   connection: RepoConnection;
@@ -38,7 +39,9 @@ export async function PATCH(
   { params }: { params: Promise<{ connectionId: string }> },
 ): Promise<NextResponse<RepoConnectionSelectResponse | RepoConnectionSelectErrorResponse>> {
   const { connectionId } = await params;
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const body: unknown = await request.json().catch(() => ({}));

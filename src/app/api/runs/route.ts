@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../lib/api-auth";
+
 import { buildDemoRun, buildPendingRun } from "@/lib/demo-run";
 import {
   extractCommentsFromScreenshots,
@@ -10,7 +12,7 @@ import {
 } from "@/lib/gemini-extraction";
 import { getSignalGenDb } from "@/lib/mongodb";
 import { findRepoConnectionById } from "@/lib/repo-connection-db";
-import { resolveWorkspaceId, buildWorkspaceRepoFilter, resolveRepoConnectionId } from "@/lib/workspace";
+import { buildWorkspaceRepoFilter, resolveRepoConnectionId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +112,9 @@ async function buildRunFromJson(request: Request, workspaceId: string) {
 }
 
 export async function GET(request: Request) {
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
   const repoConnectionId = resolveRepoConnectionId(request);
   if (!repoConnectionId) {
     return NextResponse.json({ error: "Choose a repo before loading SignalGen runs." }, { status: 400 });
@@ -130,7 +134,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
   try {
     const contentType = request.headers.get("content-type") ?? "";
     const runData = contentType.includes("multipart/form-data") ? await buildRunFromMultipart(request, workspaceId) : await buildRunFromJson(request, workspaceId);

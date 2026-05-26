@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { resolveWorkspaceId } from "@/lib/workspace";
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 
 import {
   buildGitHubAppInstallState,
@@ -30,7 +31,9 @@ export async function GET(
     );
   }
 
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
   const state = buildGitHubAppInstallState({ workspaceId, secret: stateSecret });
   const installUrl = buildGitHubAppInstallUrl(config.appSlug, state);
 

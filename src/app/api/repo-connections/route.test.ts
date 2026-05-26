@@ -2,6 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RepoConnection } from "@/lib/types";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "workspace-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockCreateRepoConnection = vi.hoisted(() => vi.fn());
 const mockListRepoConnectionsByWorkspace = vi.hoisted(() => vi.fn());
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
@@ -71,7 +85,7 @@ describe("/api/repo-connections", () => {
     mockListRepoConnectionsByWorkspace.mockResolvedValue([connection]);
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/repo-connections"));
+    const response = await GET(authedRequest("http://localhost/api/repo-connections"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -83,7 +97,7 @@ describe("/api/repo-connections", () => {
     mockListRepoConnectionsByWorkspace.mockRejectedValue(new Error("mongo unavailable"));
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/repo-connections"));
+    const response = await GET(authedRequest("http://localhost/api/repo-connections"));
     const body = await response.json();
 
     expect(response.status).toBe(503);
@@ -96,7 +110,7 @@ describe("/api/repo-connections", () => {
     const { POST } = await import("./route");
 
     const response = await POST(
-      new Request("http://localhost/api/repo-connections", {
+      authedRequest("http://localhost/api/repo-connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: " viviannnl ", repo: " ai-cover-letter " }),
@@ -131,7 +145,7 @@ describe("/api/repo-connections", () => {
     const { POST } = await import("./route");
 
     const response = await POST(
-      new Request("http://localhost/api/repo-connections", {
+      authedRequest("http://localhost/api/repo-connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl", repo: "ai-cover-letter" }),
@@ -147,7 +161,7 @@ describe("/api/repo-connections", () => {
     const { POST } = await import("./route");
 
     const response = await POST(
-      new Request("http://localhost/api/repo-connections", {
+      authedRequest("http://localhost/api/repo-connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo: "ai-cover-letter" }),
@@ -164,7 +178,7 @@ describe("/api/repo-connections", () => {
     const { POST } = await import("./route");
 
     const response = await POST(
-      new Request("http://localhost/api/repo-connections", {
+      authedRequest("http://localhost/api/repo-connections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl" }),
@@ -180,7 +194,7 @@ describe("/api/repo-connections", () => {
   it("GET /api/repo-connections/[connectionId] returns 404 for unknown connection", async () => {
     const { GET } = await import("./[connectionId]/route");
 
-    const response = await GET(new Request("http://localhost/api/repo-connections/unknown"), {
+    const response = await GET(authedRequest("http://localhost/api/repo-connections/unknown"), {
       params: Promise.resolve({ connectionId: "unknown" }),
     });
     const body = await response.json();
@@ -195,7 +209,7 @@ describe("/api/repo-connections", () => {
     mockFindRepoConnectionById.mockResolvedValue(connection);
     const { GET } = await import("./[connectionId]/route");
 
-    const response = await GET(new Request("http://localhost/api/repo-connections/connection-1"), {
+    const response = await GET(authedRequest("http://localhost/api/repo-connections/connection-1"), {
       params: Promise.resolve({ connectionId: "connection-1" }),
     });
     const body = await response.json();
@@ -209,7 +223,7 @@ describe("/api/repo-connections", () => {
     mockFindRepoConnectionById.mockResolvedValue(makeRepoConnection({ workspaceId: "other-workspace" }));
     const { GET } = await import("./[connectionId]/route");
 
-    const response = await GET(new Request("http://localhost/api/repo-connections/connection-1"), {
+    const response = await GET(authedRequest("http://localhost/api/repo-connections/connection-1"), {
       params: Promise.resolve({ connectionId: "connection-1" }),
     });
     const body = await response.json();
@@ -222,7 +236,7 @@ describe("/api/repo-connections", () => {
     mockFindRepoConnectionById.mockRejectedValue(new Error("mongo unavailable"));
     const { GET } = await import("./[connectionId]/route");
 
-    const response = await GET(new Request("http://localhost/api/repo-connections/connection-1"), {
+    const response = await GET(authedRequest("http://localhost/api/repo-connections/connection-1"), {
       params: Promise.resolve({ connectionId: "connection-1" }),
     });
     const body = await response.json();
@@ -239,7 +253,7 @@ describe("/api/repo-connections", () => {
     const { PATCH } = await import("./[connectionId]/route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1", {
+      authedRequest("http://localhost/api/repo-connections/connection-1", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: " viviannnl ", repo: " SignalGen ", defaultBranch: " develop " }),
@@ -265,7 +279,7 @@ describe("/api/repo-connections", () => {
     const { PATCH } = await import("./[connectionId]/route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1", {
+      authedRequest("http://localhost/api/repo-connections/connection-1", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl" }),
@@ -284,7 +298,7 @@ describe("/api/repo-connections", () => {
     const { PATCH } = await import("./[connectionId]/route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/unknown", {
+      authedRequest("http://localhost/api/repo-connections/unknown", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repo: "SignalGen" }),

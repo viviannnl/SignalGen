@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../lib/api-auth";
+
 import { getSignalGenDb } from "@/lib/mongodb";
 import { findRepoConnectionById } from "@/lib/repo-connection-db";
 import { serializePlan, serializeSignal } from "@/lib/signal-memory-store";
 import type { ProductSignal, SignalGenRun, SignalPlan } from "@/lib/types";
-import { buildWorkspaceRepoFilter, resolveRepoConnectionId, resolveWorkspaceId } from "@/lib/workspace";
+import { buildWorkspaceRepoFilter, resolveRepoConnectionId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +76,9 @@ function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
 }
 
 export async function GET(request: Request) {
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
   const repoConnectionId = resolveRepoConnectionId(request);
   if (!repoConnectionId) {
     return NextResponse.json({ error: "Choose a repo before loading SignalGen signals." }, { status: 400 });

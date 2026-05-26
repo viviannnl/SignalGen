@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 import { findGitHubInstallationByWorkspace } from "@/lib/github-installation-db";
 import { listRepoConnectionsByWorkspace } from "@/lib/repo-connection-db";
 import type { RepoConnection } from "@/lib/types";
-import { resolveWorkspaceId } from "@/lib/workspace";
 
 type ConnectionStatusResponse =
   | { status: "disconnected" }
@@ -21,7 +22,9 @@ function logConnectionStatusError(message: string, error: unknown) {
 export async function GET(
   request: Request,
 ): Promise<NextResponse<ConnectionStatusResponse | ConnectionStatusErrorResponse>> {
-  const workspaceId = resolveWorkspaceId(request);
+  const auth = await getApiAuthContextOrResponse(request);
+  if (auth instanceof NextResponse) return auth;
+  const { workspaceId } = auth;
 
   try {
     const installation = await findGitHubInstallationByWorkspace(workspaceId);

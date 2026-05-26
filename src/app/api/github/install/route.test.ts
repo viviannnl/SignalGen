@@ -1,10 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "workspace-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 vi.mock("@/lib/workspace", () => ({
   resolveWorkspaceId: () => "workspace-test",
 }));
 
-const SECRET = "test-state-secret-with-enough-length";
+const SECRET="***";
 
 function stubGitHubAppEnv() {
   vi.stubEnv("SIGNALGEN_GITHUB_APP_SLUG", "signalgen-dev");
@@ -21,7 +35,7 @@ describe("/api/github/install", () => {
     stubGitHubAppEnv();
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/github/install"));
+    const response = await GET(authedRequest("http://localhost/api/github/install"));
 
     expect(response.status).toBe(307);
     const location = response.headers.get("location");
@@ -34,7 +48,7 @@ describe("/api/github/install", () => {
     vi.stubEnv("SIGNALGEN_GITHUB_APP_STATE_SECRET", "");
     const { GET } = await import("./route");
 
-    const response = await GET(new Request("http://localhost/api/github/install"));
+    const response = await GET(authedRequest("http://localhost/api/github/install"));
     const body = await response.json();
 
     expect(response.status).toBe(503);

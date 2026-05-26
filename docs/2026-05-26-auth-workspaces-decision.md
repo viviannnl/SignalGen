@@ -130,9 +130,22 @@ export async function requireAuthContext(request: Request, options?: { allowDemo
 
 Current B2 status: locally implemented. `@clerk/nextjs` is installed, Clerk proxy bootstrap is in place, and `requireAuthContext()` maps a Clerk authenticated user + active organization into SignalGen `userId` + `workspaceId`. Missing sessions and missing active organizations fail closed; demo fallback remains explicit and env-gated. Production Clerk keys still need to be configured outside the repo before protected routes are migrated broadly.
 
+Production/local activation checklist, done outside the repo with real secret values:
+
+1. Create or use a Clerk application for SignalGen.
+2. Enable Clerk Organizations so each SignalGen workspace maps to one active Clerk organization.
+3. Configure allowed redirect URLs for the deployed app and local development, including `/dashboard`.
+4. Set these values in Vercel/local secret stores, never in git:
+   - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+   - `CLERK_SECRET_KEY`
+5. Keep `SIGNALGEN_ALLOW_DEMO_AUTH` disabled in production unless intentionally running a private demo environment.
+6. Smoke-test sign-in, organization creation/selection, `/api/health`, `/dashboard`, and protected product API calls after deployment.
+
 ### B3 — Route-by-route enforcement
 
 Move existing routes from `resolveWorkspaceId()` demo behavior to `requireAuthContext()` where production protection is required.
+
+Current B3 status: implemented for product-facing, repo-scoped API routes. The migrated routes now use the shared `getApiAuthContextOrResponse()` wrapper around `requireAuthContext()`, returning `AUTH_REQUIRED`/`WORKSPACE_REQUIRED` JSON before any product-data read/write. Access-boundary tests use non-production trusted auth headers to prove the routes are scoped by the authenticated workspace while preserving repo-selection gates.
 
 Start with read/write APIs already hardened for repo scope:
 

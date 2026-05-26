@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../../../lib/api-auth";
+
 import { ImplementationJobError, prepareImplementationPrDraft } from "@/lib/implementation-job";
 import { getSignalGenDb } from "@/lib/mongodb";
 import type { SignalGenRun } from "@/lib/types";
@@ -24,6 +26,10 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
 
 export async function POST(request: Request, context: PrepareRouteContext) {
   try {
+    const auth = await getApiAuthContextOrResponse(request);
+    if (auth instanceof NextResponse) return auth;
+    const { workspaceId } = auth;
+
     const body = (await request.json().catch(() => ({}))) as PrepareRequestBody;
     const { runId } = await context.params;
     if (!ObjectId.isValid(runId)) {
@@ -33,7 +39,7 @@ export async function POST(request: Request, context: PrepareRouteContext) {
     const db = await getSignalGenDb();
     const collection = db.collection("runs");
     const objectId = new ObjectId(runId);
-    const doc = await collection.findOne({ _id: objectId });
+    const doc = await collection.findOne({ _id: objectId, workspaceId });
 
     if (!doc) {
       return NextResponse.json({ ok: false, error: "Run not found." }, { status: 404 });

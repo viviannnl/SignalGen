@@ -2,6 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RepoConnection } from "@/lib/types";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "workspace-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
 const mockUpdateRepoConnection = vi.hoisted(() => vi.fn());
 const mockWriteAuditLog = vi.hoisted(() => vi.fn());
@@ -70,7 +84,7 @@ describe("/api/repo-connections/[connectionId]/disable", () => {
     mockFindRepoConnectionById.mockResolvedValue(null);
     const { POST } = await import("./route");
 
-    const response = await POST(new Request("http://localhost/api/repo-connections/unknown/disable", { method: "POST" }), {
+    const response = await POST(authedRequest("http://localhost/api/repo-connections/unknown/disable", { method: "POST" }), {
       params: Promise.resolve({ connectionId: "unknown" }),
     });
     const body = await response.json();
@@ -85,7 +99,7 @@ describe("/api/repo-connections/[connectionId]/disable", () => {
     mockFindRepoConnectionById.mockResolvedValue(makeRepoConnection({ workspaceId: "other-workspace" }));
     const { POST } = await import("./route");
 
-    const response = await POST(new Request("http://localhost/api/repo-connections/connection-1/disable", { method: "POST" }), {
+    const response = await POST(authedRequest("http://localhost/api/repo-connections/connection-1/disable", { method: "POST" }), {
       params: Promise.resolve({ connectionId: "connection-1" }),
     });
     const body = await response.json();
@@ -107,7 +121,7 @@ describe("/api/repo-connections/[connectionId]/disable", () => {
     const { POST } = await import("./route");
 
     const response = await POST(
-      new Request("http://localhost/api/repo-connections/connection-1/disable", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ disabledReason: " Disabled for incident response " }),
@@ -141,7 +155,7 @@ describe("/api/repo-connections/[connectionId]/disable", () => {
     const { POST } = await import("./route");
 
     const response = await POST(
-      new Request("http://localhost/api/repo-connections/connection-1/disable", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ disabledReason: `token ${"ghp"}_sensitivevalue` }),
@@ -163,7 +177,7 @@ describe("/api/repo-connections/[connectionId]/disable", () => {
     mockUpdateRepoConnection.mockResolvedValue(null);
     const { POST } = await import("./route");
 
-    const response = await POST(new Request("http://localhost/api/repo-connections/connection-1/disable", { method: "POST" }), {
+    const response = await POST(authedRequest("http://localhost/api/repo-connections/connection-1/disable", { method: "POST" }), {
       params: Promise.resolve({ connectionId: "connection-1" }),
     });
     const body = await response.json();
@@ -177,7 +191,7 @@ describe("/api/repo-connections/[connectionId]/disable", () => {
     mockFindRepoConnectionById.mockRejectedValue(new Error("mongo unavailable with sensitive details"));
     const { POST } = await import("./route");
 
-    const response = await POST(new Request("http://localhost/api/repo-connections/connection-1/disable", { method: "POST" }), {
+    const response = await POST(authedRequest("http://localhost/api/repo-connections/connection-1/disable", { method: "POST" }), {
       params: Promise.resolve({ connectionId: "connection-1" }),
     });
     const body = await response.json();

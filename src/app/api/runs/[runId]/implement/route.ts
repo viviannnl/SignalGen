@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../../lib/api-auth";
+
 import { createImplementationJob, ImplementationJobError } from "@/lib/implementation-job";
 import { getSignalGenDb } from "@/lib/mongodb";
 import type { SignalGenRun } from "@/lib/types";
@@ -24,6 +26,10 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
 
 export async function POST(request: Request, context: ImplementRouteContext) {
   try {
+    const auth = await getApiAuthContextOrResponse(request);
+    if (auth instanceof NextResponse) return auth;
+    const { workspaceId, userId } = auth;
+
     const body = (await request.json().catch(() => ({}))) as ImplementRequestBody;
     const { runId } = await context.params;
     if (!ObjectId.isValid(runId)) {
@@ -33,7 +39,7 @@ export async function POST(request: Request, context: ImplementRouteContext) {
     const db = await getSignalGenDb();
     const collection = db.collection("runs");
     const objectId = new ObjectId(runId);
-    const doc = await collection.findOne({ _id: objectId });
+    const doc = await collection.findOne({ _id: objectId, workspaceId });
 
     if (!doc) {
       return NextResponse.json({ error: "Run not found." }, { status: 404 });
@@ -54,7 +60,7 @@ export async function POST(request: Request, context: ImplementRouteContext) {
     // GitHub automation is gated — requires workspace + repo connection + founder approval.
     // Real execution belongs in a future stage after all three gates exist.
     const update = createImplementationJob(run, {
-      createdBy: "dashboard_founder",
+      createdBy: userId,
     });
 
     const response = await collection.findOneAndUpdate(

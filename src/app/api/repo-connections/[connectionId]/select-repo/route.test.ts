@@ -2,6 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RepoConnection } from "@/lib/types";
 
+const AUTH_HEADERS = {
+  "x-signalgen-test-user-id": "user-test",
+  "x-signalgen-test-workspace-id": "workspace-test",
+  "x-signalgen-test-role": "owner",
+};
+
+function authedRequest(input: string, init: RequestInit = {}): Request {
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries(AUTH_HEADERS)) {
+    headers.set(key, value);
+  }
+  return new Request(input, { ...init, headers });
+}
+
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
 const mockUpdateRepoConnection = vi.hoisted(() => vi.fn());
 const mockFindGitHubInstallationByWorkspace = vi.hoisted(() => vi.fn());
@@ -91,7 +105,7 @@ describe("/api/repo-connections/[connectionId]/select-repo", () => {
     const { PATCH } = await import("./route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1/select-repo", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/select-repo", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: " viviannnl ", repo: " SignalGen ", defaultBranch: " main ", installationId: "client-supplied-value" }),
@@ -116,7 +130,7 @@ describe("/api/repo-connections/[connectionId]/select-repo", () => {
     const { PATCH } = await import("./route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1/select-repo", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/select-repo", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl", repo: "SignalGen", defaultBranch: "main" }),
@@ -135,7 +149,7 @@ describe("/api/repo-connections/[connectionId]/select-repo", () => {
     const { PATCH } = await import("./route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1/select-repo", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/select-repo", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl", repo: "SignalGen", defaultBranch: "main", installationId: "12345" }),
@@ -154,7 +168,7 @@ describe("/api/repo-connections/[connectionId]/select-repo", () => {
     const { PATCH } = await import("./route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1/select-repo", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/select-repo", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl", repo: "SignalGen", defaultBranch: "main", installationId: "12345" }),
@@ -174,7 +188,7 @@ describe("/api/repo-connections/[connectionId]/select-repo", () => {
     const { PATCH } = await import("./route");
 
     const response = await PATCH(
-      new Request("http://localhost/api/repo-connections/connection-1/select-repo", {
+      authedRequest("http://localhost/api/repo-connections/connection-1/select-repo", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ owner: "viviannnl", repo: "SignalGen", defaultBranch: "main", installationId: "12345" }),

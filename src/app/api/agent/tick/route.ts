@@ -1,6 +1,8 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
+import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
+
 import { processAgentTick, type AgentTickStore } from "@/lib/agent-tick";
 import { callHostedAgent, getHostedAgentConfig } from "@/lib/hosted-agent-client";
 import { getSignalGenDb } from "@/lib/mongodb";
@@ -35,6 +37,10 @@ function pendingRunQuery(runId: string | undefined, repoConnectionId: string, wo
 
 export async function POST(request: Request) {
   try {
+    const auth = await getApiAuthContextOrResponse(request);
+    if (auth instanceof NextResponse) return auth;
+    const { workspaceId } = auth;
+
     const body = (await request.json().catch(() => ({}))) as TickRequestBody;
     const runId = body.runId?.trim() || undefined;
     const repoConnectionId = body.repoConnectionId?.trim() || undefined;
@@ -43,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     const connection = await findRepoConnectionById(repoConnectionId);
-    if (!connection || connection.status !== "connected") {
+    if (!connection || connection.workspaceId !== workspaceId || connection.status !== "connected") {
       return NextResponse.json({ ok: false, error: "Choose a connected repo before running the SignalGen agent." }, { status: 400 });
     }
 
