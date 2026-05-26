@@ -276,10 +276,10 @@ export class RealGitHubClient implements GitHubClient {
   }
 }
 
-export async function createRealGitHubClientForInstallation(
+export async function createGitHubInstallationToken(
   installationId: string,
   fetchImpl: FetchLike = fetch,
-): Promise<{ client: RealGitHubClient; installationTokenMarker: string }> {
+): Promise<string> {
   const appJwt = createGitHubAppJwt();
   const tokenResult = await githubJson<{ token: string }>(
     fetchImpl,
@@ -296,7 +296,15 @@ export async function createRealGitHubClientForInstallation(
     throw error;
   }
 
-  return { client: new RealGitHubClient(tokenResult.token, fetchImpl), installationTokenMarker: "present" };
+  return tokenResult.token;
+}
+
+export async function createRealGitHubClientForInstallation(
+  installationId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<{ client: RealGitHubClient; installationTokenMarker: string }> {
+  const token = await createGitHubInstallationToken(installationId, fetchImpl);
+  return { client: new RealGitHubClient(token, fetchImpl), installationTokenMarker: "present" };
 }
 
 export function createMockGitHubClient(): MockGitHubClient {
