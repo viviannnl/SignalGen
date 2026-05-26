@@ -154,6 +154,17 @@ describe("executeImplementationJob", () => {
     expect(client.calls).toHaveLength(0);
   });
 
+  it("blocks and makes no client calls when repo connection belongs to another workspace", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    const conn = buildValidRepoConnection({ workspaceId: "other-ws" });
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext({ repoConnection: conn }), client);
+
+    expect(result.success).toBe(false);
+    expect(result.gateFailure).toMatchObject({ passed: false, gate: "RepoConnectionWorkspace" });
+    expect(client.calls).toHaveLength(0);
+  });
+
   it("blocks and makes no client calls when pr_creation capability is disabled", async () => {
     mockFindImplementationJobById.mockResolvedValue(buildValidJob());
     const conn = buildValidRepoConnection({
