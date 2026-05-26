@@ -111,7 +111,8 @@ Do not assume these versions remain current; re-check before installing.
 Create a central helper layer, likely:
 
 - `src/lib/auth.ts`
-- extend `src/lib/workspace.ts`
+- `src/proxy.ts`
+- safe env placeholders in `.env.local.example`
 
 It should expose a small API such as:
 
@@ -121,10 +122,13 @@ export type AuthContext = {
   workspaceId: string;
   role: "owner" | "admin" | "member";
   mode: "authenticated" | "demo";
+  provider?: "clerk";
 };
 
 export async function requireAuthContext(request: Request, options?: { allowDemo?: boolean }): Promise<AuthContext>;
 ```
+
+Current B2 status: locally implemented. `@clerk/nextjs` is installed, Clerk proxy bootstrap is in place, and `requireAuthContext()` maps a Clerk authenticated user + active organization into SignalGen `userId` + `workspaceId`. Missing sessions and missing active organizations fail closed; demo fallback remains explicit and env-gated. Production Clerk keys still need to be configured outside the repo before protected routes are migrated broadly.
 
 ### B3 — Route-by-route enforcement
 

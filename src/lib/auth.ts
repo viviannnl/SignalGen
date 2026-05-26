@@ -7,10 +7,21 @@ export type AuthContext = {
   workspaceId: string;
   role: WorkspaceRole;
   mode: "authenticated" | "demo";
+  provider?: "clerk";
 };
+
+type ClerkSessionLike = {
+  userId?: string | null;
+  orgId?: string | null;
+  orgRole?: string | null;
+  sessionClaims?: Record<string, unknown> | null;
+};
+
+export type AuthProvider = () => Promise<ClerkSessionLike | null> | ClerkSessionLike | null;
 
 export type RequireAuthContextOptions = {
   allowDemo?: boolean;
+  authProvider?: AuthProvider;
 };
 
 export class AuthContextError extends Error {
@@ -43,6 +54,20 @@ function roleFromHeader(value: string | null): WorkspaceRole {
   throw new AuthContextError("INVALID_ROLE", "Invalid workspace role.", 400);
 }
 
+function roleFromClerkOrgRole(value: string | null | undefined): WorkspaceRole {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return "member";
+  if (normalized === "owner" || normalized === "org:owner") return "owner";
+  if (normalized === "admin" || normalized === "org:admin") return "admin";
+  if (normalized === "member" || normalized === "org:member") return "member";
+  return "member";
+}
+
+function readClaimString(claims: Record<string, unknown> | null | undefined, key: string): string | undefined {
+  const value = claims?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function readTrustedTestContext(request: Request): AuthContext | null {
   if (isProductionRuntime()) return null;
 
@@ -58,11 +83,49 @@ function readTrustedTestContext(request: Request): AuthContext | null {
   };
 }
 
+async function readDefaultClerkAuth(): Promise<ClerkSessionLike | null> {
+  try {
+    const { auth } = await import("@clerk/nextjs/server");
+    return await auth();
+  } catch (error) {
+    console.error("Clerk auth context could not be resolved", {
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return null;
+  }
+}
+
+async function readClerkContext(provider: AuthProvider): Promise<AuthContext | null> {
+  const session = await provider();
+  if (!session) return null;
+
+  const userId = session.userId?.trim();
+  if (!userId) return null;
+
+  const workspaceId = session.orgId?.trim() ?? readClaimString(session.sessionClaims, "org_id");
+  if (!workspaceId) {
+    throw new AuthContextError(
+      "WORKSPACE_REQUIRED",
+      "Choose or create a SignalGen workspace before continuing.",
+      403,
+    );
+  }
+
+  return {
+    mode: "authenticated",
+    provider: "clerk",
+    userId,
+    workspaceId,
+    role: roleFromClerkOrgRole(session.orgRole ?? readClaimString(session.sessionClaims, "org_role")),
+  };
+}
+
 export async function requireAuthContext(request: Request, options: RequireAuthContextOptions = {}): Promise<AuthContext> {
-  // B2 scaffold: Clerk will be wired here next. Until then, only trusted test
-  // headers outside production and explicit demo fallback can produce context.
   const trustedTestContext = readTrustedTestContext(request);
   if (trustedTestContext) return trustedTestContext;
+
+  const clerkContext = await readClerkContext(options.authProvider ?? readDefaultClerkAuth);
+  if (clerkContext) return clerkContext;
 
   if (options.allowDemo && isDemoAuthAllowed()) {
     return {

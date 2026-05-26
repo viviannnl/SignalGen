@@ -306,17 +306,23 @@ Decision record: `docs/2026-05-26-auth-workspaces-decision.md`.
 
 Decision: use Clerk first for production authentication and organization/workspace identity. Keep GitHub App installation as the repo-write permission model. SignalGen will map Clerk users/orgs into internal SignalGen users/workspaces/memberships so every product object remains workspace-scoped.
 
-#### B2. Central session/workspace helper — started
+#### B2. Central session/workspace helper — local implementation complete
 
-Initial scaffold exists in `src/lib/auth.ts` with regression tests in `src/lib/auth.test.ts`. It defines:
+Implemented in the current B2 slice after the B1 decision record. The helper in `src/lib/auth.ts` now defines:
 
 - `AuthContext`,
 - `AuthContextError`,
 - `requireAuthContext(request, { allowDemo })`,
+- Clerk-backed session/org resolution through `@clerk/nextjs`,
+- Clerk user id → SignalGen `userId`,
+- Clerk active organization id → SignalGen `workspaceId`,
+- Clerk organization role → SignalGen `owner | admin | member` with unknown roles mapped to least-privilege `member`,
 - explicit demo fallback gated by `SIGNALGEN_ALLOW_DEMO_AUTH`,
 - trusted test headers for access-boundary tests outside production only.
 
-Next B2 implementation step: install/configure Clerk and wire Clerk session/org data into `requireAuthContext()` while preserving fail-closed production behavior.
+The app also has Clerk proxy bootstrap in `src/proxy.ts` and safe env placeholders in `.env.local.example`. Missing Clerk config still fails closed: proxy passes through and protected helpers return `AUTH_REQUIRED` rather than falling back to demo automatically.
+
+Next B2/B3 implementation step: configure Clerk project/env values outside the repo, add sign-in/org-selection UI, then migrate protected routes from `resolveWorkspaceId()` to `requireAuthContext()` route by route with access-boundary tests.
 
 #### B3. Route-by-route workspace enforcement
 
