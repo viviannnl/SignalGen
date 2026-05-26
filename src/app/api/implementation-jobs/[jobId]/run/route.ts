@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { MockGitHubClient } from "@/lib/github-client";
+import { MockGitHubClient, createRealGitHubClientForInstallation, type GitHubClient } from "@/lib/github-client";
 import { executeImplementationJob } from "@/lib/implementation-executor";
 import { findImplementationJobById } from "@/lib/implementation-job-db";
 import { findRepoConnectionById } from "@/lib/repo-connection-db";
@@ -37,12 +37,36 @@ export async function POST(
 
     const repoConnection = await findRepoConnectionById(job.repoConnectionId);
 
+    const useRealGitHub =
+      typeof body === "object" &&
+      body !== null &&
+      "executionMode" in body &&
+      (body as { executionMode?: unknown }).executionMode === "real_github";
+
+    if (useRealGitHub && process.env.SIGNALGEN_ENABLE_REAL_GITHUB_WRITES !== "true") {
+      return NextResponse.json({ success: false, error: "Real GitHub writes are disabled" }, { status: 403 });
+    }
+
+    let githubClient: GitHubClient = new MockGitHubClient();
+    let installationToken: string | null = null;
+    if (useRealGitHub) {
+      if (!repoConnection?.installationId) {
+        return NextResponse.json({ success: false, error: "Repo connection installation is missing" }, { status: 400 });
+      }
+      if (repoConnection.workspaceId !== workspaceId || repoConnection.workspaceId !== job.workspaceId) {
+        return NextResponse.json({ success: false, error: "Repo connection workspace mismatch" }, { status: 403 });
+      }
+      const realClient = await createRealGitHubClientForInstallation(repoConnection.installationId);
+      githubClient = realClient.client;
+      installationToken = realClient.installationTokenMarker;
+    }
+
     const result = await executeImplementationJob(jobId, {
       workspaceId,
       repoConnection,
-      installationToken: null,
+      installationToken,
       requestingUserId,
-    }, new MockGitHubClient());
+    }, githubClient);
 
     return NextResponse.json(result);
   } catch (error) {

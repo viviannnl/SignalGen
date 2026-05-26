@@ -23,6 +23,10 @@ export function checkAllGates(job: ImplementationJob, context: GateContext): Gat
     return { passed: false, gate: "RepoConnectionStatus", reason: "Repo connection is not connected" };
   }
 
+  if (context.repoConnection.workspaceId !== context.workspaceId || context.repoConnection.workspaceId !== job.workspaceId) {
+    return { passed: false, gate: "RepoConnectionWorkspace", reason: "Repo connection workspace mismatch" };
+  }
+
   if (context.repoConnection._id?.toString() !== job.repoConnectionId) {
     return { passed: false, gate: "RepoConnectionMatch", reason: "Repo connection ID mismatch" };
   }
