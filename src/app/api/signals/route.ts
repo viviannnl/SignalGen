@@ -26,6 +26,16 @@ function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
   const title = run.signal?.title ?? primaryCluster?.title ?? "Feedback signal";
   const summary = run.signal?.summary ?? primaryCluster?.summary ?? "Signal generated from uploaded feedback.";
 
+  const signalStatus = run.status === "plan_ready"
+    ? "plan_ready"
+    : run.status === "approved"
+      ? "approved"
+      : run.status === "rejected"
+        ? "rejected"
+        : run.status === "pr_created"
+          ? "implemented"
+          : "accumulating";
+  const hasActionablePlan = signalStatus === "plan_ready" || signalStatus === "approved" || signalStatus === "rejected" || signalStatus === "implemented";
   const signal: SignalWithPlan = {
     _id: run._id,
     workspaceId: run.workspaceId,
@@ -37,13 +47,13 @@ function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
     evidenceItems: run.evidenceItems,
     strength: run.signal?.confidence ?? primaryCluster?.confidence ?? 0,
     confidence: run.signal?.confidence ?? primaryCluster?.confidence ?? 0,
-    status: run.status === "plan_ready" ? "plan_ready" : run.status === "approved" ? "approved" : run.status === "rejected" ? "rejected" : "accumulating",
-    currentPlanId: run._id,
+    status: signalStatus,
+    currentPlanId: hasActionablePlan ? run._id : undefined,
     createdAt,
     updatedAt: run.updatedAt,
   };
 
-  if (run.plan?.recommendedChange) {
+  if (hasActionablePlan && run.plan?.recommendedChange) {
     signal.currentPlan = {
       _id: run._id,
       workspaceId: run.workspaceId,
