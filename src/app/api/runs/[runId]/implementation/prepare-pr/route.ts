@@ -7,6 +7,10 @@ import type { SignalGenRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+type PrepareRequestBody = {
+  repoConnectionId?: string;
+};
+
 type PrepareRouteContext = {
   params: Promise<{ runId: string }>;
 };
@@ -18,8 +22,9 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
   } as SignalGenRun;
 }
 
-export async function POST(_request: Request, context: PrepareRouteContext) {
+export async function POST(request: Request, context: PrepareRouteContext) {
   try {
+    const body = (await request.json().catch(() => ({}))) as PrepareRequestBody;
     const { runId } = await context.params;
     if (!ObjectId.isValid(runId)) {
       return NextResponse.json({ ok: false, error: "Invalid run id." }, { status: 400 });
@@ -34,10 +39,15 @@ export async function POST(_request: Request, context: PrepareRouteContext) {
       return NextResponse.json({ ok: false, error: "Run not found." }, { status: 404 });
     }
 
-    const update = prepareImplementationPrDraft(serializeRun(doc));
+    const run = serializeRun(doc);
+    if (!body.repoConnectionId || run.repoConnectionId !== body.repoConnectionId) {
+      return NextResponse.json({ ok: false, error: "Choose the run's repo before preparing a PR draft." }, { status: 400 });
+    }
+
+    const update = prepareImplementationPrDraft(run);
 
     const response = await collection.findOneAndUpdate(
-      { _id: objectId, status: "approved", "implementation.status": "queued" },
+      { _id: objectId, workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, status: "approved", "implementation.status": "queued" },
       { $set: update },
       { returnDocument: "after" },
     );

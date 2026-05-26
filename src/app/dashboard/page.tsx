@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { ProductSignal, RepoConnection, SignalGenRun, SignalPlan } from "@/lib/types";
 
@@ -16,6 +17,7 @@ type GitHubStatus =
   | { status: "connected"; installationId: string; repoConnection: RepoConnection; repoConnections?: RepoConnection[] };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [runs, setRuns] = useState<ApiRun[]>([]);
   const [signals, setSignals] = useState<ApiSignal[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -29,20 +31,30 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("new-analysis");
   const [githubStatus, setGithubStatus] = useState<GitHubStatus>({ status: "loading" });
+  const [selectedRepoConnectionId, setSelectedRepoConnectionId] = useState("");
 
-  const latestRun = runs[0];
-  const fileNames = useMemo(() => files.map((file) => file.name), [files]);
+  const connectedRepos = useMemo(() => {
+    if (githubStatus.status !== "connected") return [];
+    return Array.isArray(githubStatus.repoConnections) && githubStatus.repoConnections.length > 0
+      ? githubStatus.repoConnections
+      : [githubStatus.repoConnection];
+  }, [githubStatus]);
+  const selectedRepo = connectedRepos.find((connection) => connection._id === selectedRepoConnectionId);
 
-  async function loadSignals() {
-    const response = await fetch("/api/signals", { cache: "no-store" });
+  const loadSignals = useCallback(async (repoConnectionId: string) => {
+    if (!repoConnectionId) {
+      setSignals([]);
+      return;
+    }
+    const response = await fetch(`/api/signals?repoConnectionId=${encodeURIComponent(repoConnectionId)}`, { cache: "no-store" });
     if (!response.ok) {
       throw new Error("Could not load SignalGen signals.");
     }
     const data = (await response.json()) as { signals: ApiSignal[] };
     setSignals(data.signals);
-  }
+  }, []);
 
-  async function loadGitHubStatus({ showLoading = true }: { showLoading?: boolean } = {}) {
+  const loadGitHubStatus = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (showLoading) {
       setGithubStatus({ status: "loading" });
     }
@@ -60,33 +72,50 @@ export default function DashboardPage() {
         message: caughtError instanceof Error ? caughtError.message : "Could not load GitHub connection status.",
       });
     }
-  }
+  }, []);
 
-  async function loadRuns() {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/runs", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("Could not load SignalGen runs.");
+  const loadRuns = useCallback(
+    async (repoConnectionId = selectedRepoConnectionId) => {
+      if (!repoConnectionId) {
+        setRuns([]);
+        setSignals([]);
+        setIsLoading(false);
+        return;
       }
-      const data = (await response.json()) as { runs: ApiRun[] };
-      setRuns(data.runs);
-      await loadSignals();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
-    } finally {
-      setIsLoading(false);
-    }
-  }
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`/api/runs?repoConnectionId=${encodeURIComponent(repoConnectionId)}`, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("Could not load SignalGen runs.");
+        }
+        const data = (await response.json()) as { runs: ApiRun[] };
+        setRuns(data.runs);
+        await loadSignals(repoConnectionId);
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadSignals, selectedRepoConnectionId],
+  );
+
+  const latestRun = runs[0];
+  const fileNames = useMemo(() => files.map((file) => file.name), [files]);
 
   async function createRun() {
+    if (!selectedRepoConnectionId) {
+      setError("Choose a repo before creating a SignalGen run.");
+      return;
+    }
     setIsCreating(true);
     setError(null);
 
     try {
       const formData = new FormData();
+      formData.append("repoConnectionId", selectedRepoConnectionId);
       const filesToUpload = files.slice(0, 5);
       for (const file of filesToUpload) {
         formData.append("screenshots", file);
@@ -110,12 +139,12 @@ export default function DashboardPage() {
       void fetch("/api/agent/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: data.run._id }),
+        body: JSON.stringify({ runId: data.run._id, repoConnectionId: selectedRepoConnectionId }),
       }).catch(() => undefined);
 
       // Start non-blocking polling for this run
       setIsProcessing(true);
-      void pollRunUntilProcessed(data.run._id);
+      void pollRunUntilProcessed(data.run._id, selectedRepoConnectionId);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
       setIsProcessing(false);
@@ -125,6 +154,10 @@ export default function DashboardPage() {
   }
 
   async function createDemoRun() {
+    if (!selectedRepoConnectionId) {
+      setError("Choose a repo before creating a SignalGen run.");
+      return;
+    }
     setIsCreating(true);
     setError(null);
 
@@ -132,7 +165,7 @@ export default function DashboardPage() {
       const response = await fetch("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ repoConnectionId: selectedRepoConnectionId }),
       });
 
       if (!response.ok) {
@@ -146,11 +179,11 @@ export default function DashboardPage() {
       void fetch("/api/agent/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: data.run._id }),
+        body: JSON.stringify({ runId: data.run._id, repoConnectionId: selectedRepoConnectionId }),
       }).catch(() => undefined);
 
       setIsProcessing(true);
-      void pollRunUntilProcessed(data.run._id);
+      void pollRunUntilProcessed(data.run._id, selectedRepoConnectionId);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
       setIsProcessing(false);
@@ -160,6 +193,10 @@ export default function DashboardPage() {
   }
 
   async function createPasteRun() {
+    if (!selectedRepoConnectionId) {
+      setError("Choose a repo before creating a SignalGen run.");
+      return;
+    }
     const comments = pastedText
       .split("\n")
       .map((comment) => comment.trim())
@@ -177,7 +214,7 @@ export default function DashboardPage() {
       const response = await fetch("/api/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comments }),
+        body: JSON.stringify({ repoConnectionId: selectedRepoConnectionId, comments }),
       });
 
       if (!response.ok) {
@@ -192,11 +229,11 @@ export default function DashboardPage() {
       void fetch("/api/agent/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: data.run._id }),
+        body: JSON.stringify({ runId: data.run._id, repoConnectionId: selectedRepoConnectionId }),
       }).catch(() => undefined);
 
       setIsProcessing(true);
-      void pollRunUntilProcessed(data.run._id);
+      void pollRunUntilProcessed(data.run._id, selectedRepoConnectionId);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
       setIsProcessing(false);
@@ -206,6 +243,10 @@ export default function DashboardPage() {
   }
 
   async function decideRun(runId: string, action: "approve" | "reject") {
+    if (!selectedRepoConnectionId) {
+      setError("Choose a repo before saving a founder decision.");
+      return;
+    }
     const note = window.prompt(
       action === "approve"
         ? "Optional approval note for the agent before future PR work:"
@@ -222,7 +263,7 @@ export default function DashboardPage() {
       const response = await fetch(`/api/runs/${runId}/decision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, note }),
+        body: JSON.stringify({ action, note, repoConnectionId: selectedRepoConnectionId }),
       });
 
       if (!response.ok) {
@@ -239,12 +280,20 @@ export default function DashboardPage() {
   }
 
   async function runImplementationAction(runId: string, action: "start" | "prepare-pr") {
+    if (!selectedRepoConnectionId) {
+      setError("Choose a repo before starting implementation.");
+      return;
+    }
     setImplementingRunId(runId);
     setError(null);
 
     try {
       const endpoint = action === "start" ? `/api/runs/${runId}/implement` : `/api/runs/${runId}/implementation/prepare-pr`;
-      const response = await fetch(endpoint, { method: "POST" });
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoConnectionId: selectedRepoConnectionId }),
+      });
 
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -259,12 +308,12 @@ export default function DashboardPage() {
     }
   }
 
-  async function pollRunUntilProcessed(runId: string) {
+  async function pollRunUntilProcessed(runId: string, repoConnectionId: string) {
     const maxAttempts = 30; // 60s max
     for (let i = 0; i < maxAttempts; i++) {
       await new Promise<void>((resolve) => setTimeout(resolve, 2000));
       try {
-        const response = await fetch(`/api/runs/${runId}`, { cache: "no-store" });
+        const response = await fetch(`/api/runs/${runId}?repoConnectionId=${encodeURIComponent(repoConnectionId)}`, { cache: "no-store" });
         if (!response.ok) break;
         const body = (await response.json()) as { run?: ApiRun };
         if (!body.run) break;
@@ -282,47 +331,29 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    let isMounted = true;
-
     void Promise.resolve().then(() => loadGitHubStatus({ showLoading: false }));
+  }, [loadGitHubStatus]);
 
-    Promise.all([
-      fetch("/api/runs", { cache: "no-store" }),
-      fetch("/api/signals", { cache: "no-store" }),
-    ])
-      .then(async ([runsResponse, signalsResponse]) => {
-        if (!runsResponse.ok) {
-          throw new Error("Could not load SignalGen runs.");
-        }
-        if (!signalsResponse.ok) {
-          throw new Error("Could not load SignalGen signals.");
-        }
-        const runsData = (await runsResponse.json()) as { runs: ApiRun[] };
-        const signalsData = (await signalsResponse.json()) as { signals: ApiSignal[] };
-        return { runs: runsData.runs, signals: signalsData.signals };
-      })
-      .then((data) => {
-        if (isMounted) {
-          setRuns(data.runs);
-          setSignals(data.signals);
-          setError(null);
-        }
-      })
-      .catch((caughtError: unknown) => {
-        if (isMounted) {
-          setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      });
+  useEffect(() => {
+    if (githubStatus.status !== "connected") return;
+    const repoFromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("repoConnectionId") ?? "" : "";
+    const savedRepo = typeof window !== "undefined" ? window.localStorage.getItem("signalgen:selectedRepoConnectionId") ?? "" : "";
+    const candidate = repoFromUrl || savedRepo;
+    if (candidate && connectedRepos.some((connection) => connection._id === candidate)) {
+      window.setTimeout(() => setSelectedRepoConnectionId(candidate), 0);
+    }
+  }, [connectedRepos, githubStatus.status]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      if (!selectedRepoConnectionId) {
+        setIsLoading(false);
+        return;
+      }
+      void loadRuns(selectedRepoConnectionId);
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadRuns, selectedRepoConnectionId]);
 
   return (
     <main className="min-h-screen bg-[#080b12] px-6 py-8 text-white sm:px-8 lg:px-10">
@@ -334,7 +365,7 @@ export default function DashboardPage() {
             </Link>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">Founder signal dashboard</h1>
             <p className="mt-2 max-w-2xl text-slate-300">
-              Upload feedback screenshots, generate a first product signal.
+              {selectedRepo ? `Current repo: ${selectedRepo.owner}/${selectedRepo.repo}` : "Choose one connected repo before creating signals, sessions, or PR work."}
             </p>
           </div>
           <button
@@ -402,7 +433,9 @@ export default function DashboardPage() {
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">New analysis</p>
             <h2 className="mt-3 text-2xl font-semibold">Upload screenshots</h2>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              Upload feedback screenshots. SignalGen extracts visible comments, records the evidence, and decides whether there is enough signal to act.
+              {selectedRepo
+                ? `This session is scoped to ${selectedRepo.owner}/${selectedRepo.repo}. Uploaded feedback, signal memory, plans, and implementation jobs stay under this repo.`
+                : "Choose a repo from the GitHub tab before uploading feedback. SignalGen will not create sessions or implementation work without an explicit repo."}
             </p>
 
             <label
@@ -444,7 +477,7 @@ export default function DashboardPage() {
 
             <button
               onClick={() => void createDemoRun()}
-              disabled={isCreating || isProcessing}
+              disabled={!selectedRepo || isCreating || isProcessing}
               className="mt-3 text-xs text-cyan-300 underline hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Use sample feedback
@@ -461,7 +494,7 @@ export default function DashboardPage() {
               />
               <button
                 onClick={() => void createPasteRun()}
-                disabled={pastedText.trim() === "" || isCreating || isProcessing}
+                disabled={!selectedRepo || pastedText.trim() === "" || isCreating || isProcessing}
                 className="mt-3 rounded-full border border-cyan-300/40 px-4 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-200 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Analyze pasted feedback
@@ -481,7 +514,7 @@ export default function DashboardPage() {
 
             <button
               onClick={() => void createRun()}
-              disabled={isCreating || isProcessing || files.length === 0}
+              disabled={!selectedRepo || isCreating || isProcessing || files.length === 0}
               className="mt-6 w-full rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isProcessing ? "Agent is processing..." : isCreating ? "Extracting comments..." : "Upload and run agent"}
@@ -529,7 +562,9 @@ export default function DashboardPage() {
                 <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={runImplementationAction} />
               </div>
             ) : (
-              <p className="mt-5 text-slate-300">No signals yet. Upload feedback to create your first signal.</p>
+              <p className="mt-5 text-slate-300">
+                {selectedRepo ? "No signals yet for this repo. Upload feedback to create your first repo-scoped signal." : "Choose a repo first. Each repo has its own saved signal session."}
+              </p>
             )}
           </div>
         </section>
@@ -546,7 +581,9 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">All signals</p>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  Signals, evidence, and decisions detected from uploaded feedback.
+                  {selectedRepo
+                    ? `Signals, evidence, and decisions saved for ${selectedRepo.owner}/${selectedRepo.repo}.`
+                    : "Choose a repo first. Signal memory is separated per repository."}
                 </p>
               </div>
               <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{signals.length} signals</span>
@@ -584,7 +621,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <p className="p-5 text-slate-300">No signals yet. Upload feedback to start building signal memory.</p>
+                <p className="p-5 text-slate-300">{selectedRepo ? "No signals yet for this repo." : "Choose a repo first. Each repo has its own signal memory."}</p>
               )}
             </div>
           </section>
@@ -597,7 +634,18 @@ export default function DashboardPage() {
             aria-labelledby="github-tab"
             className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"
           >
-            <GitHubPanel githubStatus={githubStatus} onRepoSelected={loadGitHubStatus} />
+            <GitHubPanel
+              githubStatus={githubStatus}
+              selectedRepoConnectionId={selectedRepoConnectionId}
+              onActiveRepoSelected={(connection) => {
+                if (!connection._id) return;
+                window.localStorage.setItem("signalgen:selectedRepoConnectionId", connection._id);
+                setSelectedRepoConnectionId(connection._id);
+                setActiveTab("new-analysis");
+                router.replace(`/dashboard?repoConnectionId=${encodeURIComponent(connection._id)}`);
+              }}
+              onRepoSelected={loadGitHubStatus}
+            />
           </section>
         ) : null}
       </div>
@@ -607,9 +655,13 @@ export default function DashboardPage() {
 
 function GitHubPanel({
   githubStatus,
+  selectedRepoConnectionId,
+  onActiveRepoSelected,
   onRepoSelected,
 }: {
   githubStatus: GitHubStatus;
+  selectedRepoConnectionId: string;
+  onActiveRepoSelected: (connection: RepoConnection) => void;
   onRepoSelected: () => void;
 }) {
   const [owner, setOwner] = useState("");
@@ -750,12 +802,13 @@ function GitHubPanel({
       <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
       <h2 className="mt-3 text-2xl font-semibold">Connected repositories</h2>
       <p className="mt-3 text-sm leading-6 text-slate-300">
-        {enabledForDraftPrs.length} of {connectedRepos.length} connected repos can receive SignalGen branches, commits, and
-        draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
+        Choose one repo to open its workspace. Connected repos are account-level access; sessions, signals, decisions, and PR work are repo-scoped.
+        {" "}{enabledForDraftPrs.length} of {connectedRepos.length} repos can receive SignalGen branches, commits, and draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
       </p>
       <div className="mt-5 grid gap-3">
         {connectedRepos.map((connection) => {
           const canCreateDraftPr = connection.capabilities.branch_push && connection.capabilities.pr_creation;
+          const isActive = connection._id === selectedRepoConnectionId;
           return (
             <div
               key={connection._id ?? `${connection.owner}/${connection.repo}`}
@@ -769,6 +822,14 @@ function GitHubPanel({
                 Draft PR automation: {canCreateDraftPr ? "Enabled" : "Disabled"}
               </p>
               <p>Issues: {connection.capabilities.issue_creation ? "Enabled" : "Disabled"}</p>
+              <button
+                type="button"
+                onClick={() => onActiveRepoSelected(connection)}
+                disabled={!connection._id || isActive}
+                className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2"
+              >
+                {isActive ? "Current repo workspace" : "Open workspace"}
+              </button>
             </div>
           );
         })}

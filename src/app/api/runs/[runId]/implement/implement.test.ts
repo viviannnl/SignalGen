@@ -28,11 +28,13 @@ function makeRun(overrides: Partial<SignalGenRun> = {}): DbRun {
   return {
     _id: new ObjectId("64f0c1f2a3b4c5d6e7f80901"),
     source: "dashboard_upload",
+    workspaceId: "demo",
     status: "approved",
     createdAt: now,
     updatedAt: now,
     screenshotNames: ["feedback.png"],
     comments: ["Please add Slack notifications.", "Slack alerts would help."],
+    repoConnectionId: "repo-123",
     signal: {
       title: "Slack notifications requested",
       summary: "Multiple users asked for Slack alerts.",
@@ -56,7 +58,11 @@ function makeRun(overrides: Partial<SignalGenRun> = {}): DbRun {
 }
 
 async function postImplement(runId = "64f0c1f2a3b4c5d6e7f80901") {
-  return POST(new Request(`http://localhost/api/runs/${runId}/implement`, { method: "POST" }), {
+  return POST(new Request(`http://localhost/api/runs/${runId}/implement`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repoConnectionId: "repo-123" }),
+  }), {
     params: Promise.resolve({ runId }),
   });
 }
@@ -126,7 +132,7 @@ describe("POST /api/runs/[runId]/implement", () => {
     expect(body.implementation?.prDraft).toBeUndefined();
     expect(JSON.stringify(body.implementation)).not.toContain("github.com");
     expect(mockFindOneAndUpdate).toHaveBeenCalledWith(
-      { _id: approvedRun._id, status: "approved", implementation: { $exists: false } },
+      { _id: approvedRun._id, workspaceId: "demo", repoConnectionId: "repo-123", status: "approved", implementation: { $exists: false } },
       {
         $set: expect.objectContaining({
           status: "pr_created",

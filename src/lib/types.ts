@@ -94,6 +94,7 @@ export type EvidenceItem = {
 export type ProductSignal = {
   _id?: string;
   workspaceId?: string;
+  repoConnectionId?: string;
   type: SignalType;
   title: string;
   summary: string;
@@ -113,6 +114,7 @@ export type SignalPlanStatus = "draft" | "approved" | "rejected" | "implemented"
 export type SignalPlan = {
   _id?: string;
   workspaceId?: string;
+  repoConnectionId?: string;
   signalId: string;
   recommendedChange: string;
   filesToChange: string[];
@@ -133,6 +135,7 @@ export type SignalGenRun = {
   processedAt?: string;
   processingError?: string;
   workspaceId?: string;
+  repoConnectionId?: string;
   createdByUserId?: string;
   extractionDiagnostics?: {
     commentCount: number;

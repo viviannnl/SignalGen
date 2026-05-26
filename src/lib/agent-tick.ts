@@ -7,8 +7,8 @@ const PENDING_STATUSES: SignalGenRunStatus[] = ["uploaded", "signal_detected"];
 export type AgentTickStore = {
   listPendingRuns: (limit: number, runId?: string) => Promise<SignalGenRun[]>;
   updateRunAnalysis: (runId: string, update: Partial<SignalGenRun>) => Promise<boolean>;
-  listSignals?: (workspaceId?: string) => Promise<ProductSignal[]>;
-  listPlans?: (workspaceId?: string) => Promise<SignalPlan[]>;
+  listSignals?: (workspaceId?: string, repoConnectionId?: string) => Promise<ProductSignal[]>;
+  listPlans?: (workspaceId?: string, repoConnectionId?: string) => Promise<SignalPlan[]>;
   persistSignalMemory?: (
     run: SignalGenRun,
     projection: ReturnType<typeof projectRunClustersToSignalMemory>,
@@ -49,10 +49,11 @@ export async function processAgentTick(
     }
 
     if (store.persistSignalMemory && update.signalClusters) {
-      const existingSignals = store.listSignals ? await store.listSignals(run.workspaceId) : [];
-      const existingPlans = store.listPlans ? await store.listPlans(run.workspaceId) : [];
+      const existingSignals = store.listSignals ? await store.listSignals(run.workspaceId, run.repoConnectionId) : [];
+      const existingPlans = store.listPlans ? await store.listPlans(run.workspaceId, run.repoConnectionId) : [];
       const projection = projectRunClustersToSignalMemory(run._id, update.signalClusters, existingSignals, existingPlans, {
         workspaceId: run.workspaceId,
+        repoConnectionId: run.repoConnectionId,
         now: update.processedAt ?? update.updatedAt,
         sourcePlan: update.plan,
       });

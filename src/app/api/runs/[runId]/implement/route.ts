@@ -7,6 +7,10 @@ import type { SignalGenRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+type ImplementRequestBody = {
+  repoConnectionId?: string;
+};
+
 type ImplementRouteContext = {
   params: Promise<{ runId: string }>;
 };
@@ -18,8 +22,9 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
   } as SignalGenRun;
 }
 
-export async function POST(_request: Request, context: ImplementRouteContext) {
+export async function POST(request: Request, context: ImplementRouteContext) {
   try {
+    const body = (await request.json().catch(() => ({}))) as ImplementRequestBody;
     const { runId } = await context.params;
     if (!ObjectId.isValid(runId)) {
       return NextResponse.json({ error: "Invalid run id." }, { status: 400 });
@@ -35,6 +40,9 @@ export async function POST(_request: Request, context: ImplementRouteContext) {
     }
 
     const run = serializeRun(doc);
+    if (!body.repoConnectionId || run.repoConnectionId !== body.repoConnectionId) {
+      return NextResponse.json({ error: "Choose the run's repo before starting implementation." }, { status: 400 });
+    }
     if (run.status !== "approved") {
       return NextResponse.json({ error: "Implementation requires founder approval." }, { status: 400 });
     }
@@ -50,7 +58,7 @@ export async function POST(_request: Request, context: ImplementRouteContext) {
     });
 
     const response = await collection.findOneAndUpdate(
-      { _id: objectId, status: "approved", implementation: { $exists: false } },
+      { _id: objectId, workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, status: "approved", implementation: { $exists: false } },
       {
         $set: {
           ...update,

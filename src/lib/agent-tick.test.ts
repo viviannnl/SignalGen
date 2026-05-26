@@ -164,8 +164,8 @@ describe("processAgentTick", () => {
 
     await processAgentTick(store, { agentRuntime });
 
-    expect(store.listSignals).toHaveBeenCalledWith("ws-1");
-    expect(store.listPlans).toHaveBeenCalledWith("ws-1");
+    expect(store.listSignals).toHaveBeenCalledWith("ws-1", undefined);
+    expect(store.listPlans).toHaveBeenCalledWith("ws-1", undefined);
     expect(persistSignalMemory).toHaveBeenCalledOnce();
     const [savedRun, projection] = persistSignalMemory.mock.calls[0];
     expect(savedRun.workspaceId).toBe("ws-1");

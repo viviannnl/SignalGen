@@ -141,12 +141,14 @@ function createSignalFromEvidenceItems(
   items: EvidenceItem[],
   workspaceId: string | undefined,
   now: string,
+  repoConnectionId?: string,
 ): Omit<ProductSignal, "_id"> {
   const firstItem = items[0];
   const { strength, confidence, status } = computeSignalStatus(items);
 
   return {
     workspaceId,
+    repoConnectionId,
     type: firstItem.clusterType,
     title: firstItem.title,
     summary: firstItem.summary,
@@ -192,9 +194,11 @@ export function buildPlanForSignal(
   workspaceId: string | undefined,
   now: string,
   sourcePlan?: Pick<SignalPlan, "recommendedChange" | "filesToChange" | "guardrails" | "acceptanceCriteria">,
+  repoConnectionId?: string,
 ): Omit<SignalPlan, "_id"> {
   return {
     workspaceId,
+    repoConnectionId,
     signalId,
     recommendedChange: sourcePlan?.recommendedChange ?? `Draft a small, reviewable product improvement for: ${signal.title}. Cite the accumulated evidence before asking for founder approval.`,
     filesToChange: sourcePlan?.filesToChange?.length ? sourcePlan.filesToChange : ["Product UI/content file to be selected after founder approval"],
@@ -228,6 +232,7 @@ export function projectRunClustersToSignalMemory(
   existingPlans: SignalPlan[],
   opts: {
     workspaceId?: string;
+    repoConnectionId?: string;
     now?: string;
     sourcePlan?: Pick<SignalPlan, "recommendedChange" | "filesToChange" | "guardrails" | "acceptanceCriteria">;
   },
@@ -242,7 +247,9 @@ export function projectRunClustersToSignalMemory(
     unmatchedBySignalKey.set(signalKey, [...(unmatchedBySignalKey.get(signalKey) ?? []), item]);
   }
 
-  const signalsToCreate = Array.from(unmatchedBySignalKey.values()).map((items) => createSignalFromEvidenceItems(items, opts.workspaceId, now));
+  const signalsToCreate = Array.from(unmatchedBySignalKey.values()).map((items) =>
+    createSignalFromEvidenceItems(items, opts.workspaceId, now, opts.repoConnectionId),
+  );
   const signalsToUpdate: Array<{ signalId: string; update: Partial<ProductSignal> }> = [];
   const plansToCreate: Array<Omit<SignalPlan, "_id">> = [];
 
@@ -255,14 +262,14 @@ export function projectRunClustersToSignalMemory(
 
     const alreadyHasPlan = signal.currentPlanId || existingPlans.some((plan) => plan.signalId === signalId && plan.status !== "rejected");
     if (update.status === "plan_ready" && !alreadyHasPlan) {
-      plansToCreate.push(buildPlanForSignal({ ...signal, ...update }, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan));
+      plansToCreate.push(buildPlanForSignal({ ...signal, ...update }, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan, signal.repoConnectionId ?? opts.repoConnectionId));
     }
   }
 
   signalsToCreate.forEach((signal, index) => {
     if (signal.status !== "plan_ready") return;
     const signalId = `new-signal-${runId}-${index}`;
-    plansToCreate.push(buildPlanForSignal(signal, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan));
+    plansToCreate.push(buildPlanForSignal(signal, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan, signal.repoConnectionId ?? opts.repoConnectionId));
   });
 
   return {

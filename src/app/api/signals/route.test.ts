@@ -16,6 +16,14 @@ vi.mock("@/lib/mongodb", () => ({
   })),
 }));
 
+vi.mock("@/lib/repo-connection-db", () => ({
+  findRepoConnectionById: vi.fn(async (id: string) => ({
+    _id: id,
+    workspaceId: "demo",
+    status: "connected",
+  })),
+}));
+
 vi.mock("@/lib/signal-memory-store", () => ({
   serializePlan: (doc: Record<string, unknown>) => ({ ...doc, _id: doc._id?.toString() }),
   serializeSignal: (doc: Record<string, unknown>) => ({ ...doc, _id: doc._id?.toString() }),
@@ -23,7 +31,9 @@ vi.mock("@/lib/signal-memory-store", () => ({
 
 vi.mock("@/lib/workspace", () => ({
   buildWorkspaceFilter: () => ({}),
-  resolveWorkspaceId: () => undefined,
+  buildWorkspaceRepoFilter: (workspaceId: string, repoConnectionId?: string) => ({ workspaceId, ...(repoConnectionId ? { repoConnectionId } : {}) }),
+  resolveRepoConnectionId: (request: Request) => new URL(request.url).searchParams.get("repoConnectionId") ?? undefined,
+  resolveWorkspaceId: () => "demo",
 }));
 
 const { GET } = await import("./route");
@@ -36,7 +46,7 @@ function mockFindToArray(findMock: ReturnType<typeof vi.fn>, docs: unknown[]) {
   return { sort, limit, toArray };
 }
 
-function makeLegacyRun({ status, now }: { status: string; now: string }) {
+function makeLegacyRun({ status, now, repoConnectionId = "repo-123" }: { status: string; now: string; repoConnectionId?: string }) {
   return {
     _id: new ObjectId("64f0c1f2a3b4c5d6e7f80901"),
     source: "dashboard_upload",
@@ -46,6 +56,7 @@ function makeLegacyRun({ status, now }: { status: string; now: string }) {
     processedAt: now,
     comments: ["The download button did not appear after generation."],
     screenshotNames: ["feedback.png"],
+    repoConnectionId,
     signal: {
       title: "Critical Download Button Failure",
       summary: "A user reported that the download button did not appear after generation.",
@@ -83,6 +94,35 @@ describe("GET /api/signals", () => {
     mockRunsFind.mockReset();
   });
 
+  it("filters signals, plans, and fallback runs to the selected repoConnectionId", async () => {
+    mockFindToArray(mockSignalsFind, [
+      {
+        _id: new ObjectId("64f0c1f2a3b4c5d6e7f80902"),
+        workspaceId: "demo",
+        repoConnectionId: "repo-123",
+        type: "bug",
+        title: "Repo scoped bug",
+        summary: "Only this repo should show this signal.",
+        signalKey: "bug:repo-scoped-bug",
+        evidenceItemIds: [],
+        strength: 0.5,
+        confidence: 0.5,
+        status: "accumulating",
+        createdAt: "2026-05-23T18:06:24.000Z",
+        updatedAt: "2026-05-23T18:06:24.000Z",
+      },
+    ]);
+    mockFindToArray(mockPlansFind, []);
+    mockFindToArray(mockRunsFind, []);
+
+    const response = await GET(new Request("http://localhost/api/signals?repoConnectionId=repo-123"));
+
+    expect(response.status).toBe(200);
+    expect(mockSignalsFind).toHaveBeenCalledWith(expect.objectContaining({ repoConnectionId: "repo-123" }));
+    expect(mockPlansFind).toHaveBeenCalledWith(expect.objectContaining({ repoConnectionId: "repo-123" }));
+    expect(mockRunsFind).toHaveBeenCalledWith(expect.objectContaining({ repoConnectionId: "repo-123" }));
+  });
+
   it("does not expose an awaiting-founder plan on legacy fallback signals that are still accumulating", async () => {
     const now = "2026-05-23T18:06:24.000Z";
     mockFindToArray(mockSignalsFind, []);
@@ -90,7 +130,7 @@ describe("GET /api/signals", () => {
       makeLegacyRun({ status: "processed", now }),
     ]);
 
-    const response = await GET(new Request("http://localhost/api/signals"));
+    const response = await GET(new Request("http://localhost/api/signals?repoConnectionId=repo-123"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -110,7 +150,7 @@ describe("GET /api/signals", () => {
       makeLegacyRun({ status: "pr_created", now }),
     ]);
 
-    const response = await GET(new Request("http://localhost/api/signals"));
+    const response = await GET(new Request("http://localhost/api/signals?repoConnectionId=repo-123"));
     const body = await response.json();
 
     expect(response.status).toBe(200);

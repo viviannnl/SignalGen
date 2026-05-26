@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getSignalGenDb } from "@/lib/mongodb";
+import { findRepoConnectionById } from "@/lib/repo-connection-db";
 import { serializePlan, serializeSignal } from "@/lib/signal-memory-store";
 import type { ProductSignal, SignalGenRun, SignalPlan } from "@/lib/types";
-import { buildWorkspaceFilter, resolveWorkspaceId } from "@/lib/workspace";
+import { buildWorkspaceRepoFilter, resolveRepoConnectionId, resolveWorkspaceId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -74,8 +75,16 @@ function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
 
 export async function GET(request: Request) {
   const workspaceId = resolveWorkspaceId(request);
+  const repoConnectionId = resolveRepoConnectionId(request);
+  if (!repoConnectionId) {
+    return NextResponse.json({ error: "Choose a repo before loading SignalGen signals." }, { status: 400 });
+  }
+  const connection = await findRepoConnectionById(repoConnectionId);
+  if (!connection || connection.workspaceId !== workspaceId || connection.status !== "connected") {
+    return NextResponse.json({ error: "Choose a connected repo before loading SignalGen signals." }, { status: 400 });
+  }
   const db = await getSignalGenDb();
-  const workspaceFilter = buildWorkspaceFilter(workspaceId);
+  const workspaceFilter = buildWorkspaceRepoFilter(workspaceId, repoConnectionId);
 
   const signalDocs = await db.collection("signals").find(workspaceFilter).sort({ updatedAt: -1 }).limit(100).toArray();
   const signals = signalDocs.map((doc) => serializeSignal(doc));

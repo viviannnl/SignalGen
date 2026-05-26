@@ -8,8 +8,9 @@ function serializeDoc<T extends { _id?: unknown }>(doc: T): Omit<T, "_id"> & { _
   return { ...doc, _id: doc._id?.toString() } as Omit<T, "_id"> & { _id?: string };
 }
 
-function workspaceFilter(workspaceId?: string) {
-  return workspaceId ? { workspaceId } : { $or: [{ workspaceId: { $exists: false } }, { workspaceId: undefined }] };
+function workspaceFilter(workspaceId?: string, repoConnectionId?: string) {
+  const filter = workspaceId ? { workspaceId } : { $or: [{ workspaceId: { $exists: false } }, { workspaceId: undefined }] };
+  return repoConnectionId ? { ...filter, repoConnectionId } : filter;
 }
 
 function objectIdOrNew(id: string): ObjectId {
@@ -29,21 +30,22 @@ export function buildMongoSignalMemoryStore(db: Db, runsCollection: Collection<D
   const plansCollection = db.collection("plans");
 
   return {
-    async listSignals(workspaceId) {
-      const docs = await signalsCollection.find(workspaceFilter(workspaceId)).sort({ updatedAt: -1 }).limit(200).toArray();
+    async listSignals(workspaceId, repoConnectionId) {
+      const docs = await signalsCollection.find(workspaceFilter(workspaceId, repoConnectionId)).sort({ updatedAt: -1 }).limit(200).toArray();
       return docs.map((doc) => serializeSignal(doc));
     },
-    async listPlans(workspaceId) {
-      const docs = await plansCollection.find(workspaceFilter(workspaceId)).sort({ updatedAt: -1 }).limit(200).toArray();
+    async listPlans(workspaceId, repoConnectionId) {
+      const docs = await plansCollection.find(workspaceFilter(workspaceId, repoConnectionId)).sort({ updatedAt: -1 }).limit(200).toArray();
       return docs.map((doc) => serializePlan(doc));
     },
     async persistSignalMemory(run: SignalGenRun, projection) {
       if (!run._id || !ObjectId.isValid(run._id)) return;
 
+      const runScope = workspaceFilter(run.workspaceId, run.repoConnectionId);
       const insertedSignalIds = new Map<string, string>();
       for (const [index, signal] of projection.signalsToCreate.entries()) {
         const result = await signalsCollection.findOneAndUpdate(
-          { workspaceId: signal.workspaceId, signalKey: signal.signalKey },
+          { ...workspaceFilter(signal.workspaceId, signal.repoConnectionId), signalKey: signal.signalKey },
           { $setOnInsert: signal },
           { upsert: true, returnDocument: "after" },
         );
@@ -61,7 +63,7 @@ export function buildMongoSignalMemoryStore(db: Db, runsCollection: Collection<D
           if (evidenceItems.length !== existingEvidence.length) {
             const { strength, confidence, status } = computeSignalStatus(evidenceItems);
             await signalsCollection.updateOne(
-              { _id: savedSignal._id },
+              { _id: savedSignal._id, ...workspaceFilter(signal.workspaceId, signal.repoConnectionId) },
               {
                 $set: {
                   evidenceItemIds: evidenceItems.map((item) => item.id),
@@ -79,19 +81,19 @@ export function buildMongoSignalMemoryStore(db: Db, runsCollection: Collection<D
 
       for (const { signalId, update } of projection.signalsToUpdate) {
         if (!ObjectId.isValid(signalId)) continue;
-        await signalsCollection.updateOne({ _id: new ObjectId(signalId) }, { $set: update });
+        await signalsCollection.updateOne({ _id: new ObjectId(signalId), ...runScope }, { $set: update });
       }
 
       for (const plan of projection.plansToCreate) {
         const signalId = insertedSignalIds.get(plan.signalId) ?? plan.signalId;
         const planToInsert = { ...plan, signalId };
-        const existingPlan = await plansCollection.findOne({ signalId, status: { $ne: "rejected" } });
+        const existingPlan = await plansCollection.findOne({ ...workspaceFilter(plan.workspaceId, plan.repoConnectionId), signalId, status: { $ne: "rejected" } });
         const planId = existingPlan?._id?.toString();
         const result = planId ? undefined : await plansCollection.insertOne(planToInsert);
         const currentPlanId = planId ?? result?.insertedId.toString();
         if (ObjectId.isValid(signalId) && currentPlanId) {
           await signalsCollection.updateOne(
-            { _id: new ObjectId(signalId), currentPlanId: { $exists: false } },
+            { _id: new ObjectId(signalId), ...workspaceFilter(plan.workspaceId, plan.repoConnectionId), currentPlanId: { $exists: false } },
             { $set: { currentPlanId, updatedAt: plan.updatedAt } },
           );
         }
@@ -99,11 +101,11 @@ export function buildMongoSignalMemoryStore(db: Db, runsCollection: Collection<D
 
       for (const { planId, update } of projection.plansToUpdate) {
         if (!ObjectId.isValid(planId)) continue;
-        await plansCollection.updateOne({ _id: new ObjectId(planId) }, { $set: update });
+        await plansCollection.updateOne({ _id: new ObjectId(planId), ...runScope }, { $set: update });
       }
 
       await runsCollection.updateOne(
-        { _id: objectIdOrNew(run._id) },
+        { _id: objectIdOrNew(run._id), ...runScope },
         {
           $set: {
             extractedComments: run.comments ?? [],

@@ -7,6 +7,10 @@ import type { SignalGenRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+type ImplementationRequestBody = {
+  repoConnectionId?: string;
+};
+
 type ImplementationRouteContext = {
   params: Promise<{ runId: string }>;
 };
@@ -18,8 +22,9 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
   } as SignalGenRun;
 }
 
-export async function POST(_request: Request, context: ImplementationRouteContext) {
+export async function POST(request: Request, context: ImplementationRouteContext) {
   try {
+    const body = (await request.json().catch(() => ({}))) as ImplementationRequestBody;
     const { runId } = await context.params;
     if (!ObjectId.isValid(runId)) {
       return NextResponse.json({ ok: false, error: "Invalid run id." }, { status: 400 });
@@ -34,18 +39,23 @@ export async function POST(_request: Request, context: ImplementationRouteContex
       return NextResponse.json({ ok: false, error: "Run not found." }, { status: 404 });
     }
 
-    const update = createImplementationJob(serializeRun(doc), {
+    const run = serializeRun(doc);
+    if (!body.repoConnectionId || run.repoConnectionId !== body.repoConnectionId) {
+      return NextResponse.json({ ok: false, error: "Choose the run's repo before starting implementation." }, { status: 400 });
+    }
+
+    const update = createImplementationJob(run, {
       createdBy: "dashboard_founder",
     });
 
     const response = await collection.findOneAndUpdate(
-      { _id: objectId, status: "approved", implementation: { $exists: false } },
+      { _id: objectId, workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, status: "approved", implementation: { $exists: false } },
       { $set: update },
       { returnDocument: "after" },
     );
 
     if (!response) {
-      const latestDoc = await collection.findOne({ _id: objectId });
+      const latestDoc = await collection.findOne({ _id: objectId, workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId });
       if (latestDoc?.implementation) {
         return NextResponse.json({ ok: true, run: serializeRun(latestDoc) });
       }

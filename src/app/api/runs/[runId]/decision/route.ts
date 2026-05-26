@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 type DecisionRequestBody = {
   action?: FounderDecisionAction;
   note?: string;
+  repoConnectionId?: string;
 };
 
 type DecisionRouteContext = {
@@ -41,7 +42,12 @@ export async function POST(request: Request, context: DecisionRouteContext) {
       return NextResponse.json({ ok: false, error: "Run not found." }, { status: 404 });
     }
 
-    const update = applyFounderDecision(serializeRun(doc), {
+    const run = serializeRun(doc);
+    if (!body.repoConnectionId || run.repoConnectionId !== body.repoConnectionId) {
+      return NextResponse.json({ ok: false, error: "Choose the run's repo before saving a founder decision." }, { status: 400 });
+    }
+
+    const update = applyFounderDecision(run, {
       action: body.action as FounderDecisionAction,
       note: body.note,
       decidedBy: "dashboard_founder",
@@ -53,7 +59,7 @@ export async function POST(request: Request, context: DecisionRouteContext) {
     try {
       await session.withTransaction(async () => {
         const response = await collection.findOneAndUpdate(
-          { _id: objectId, status: "plan_ready" },
+          { _id: objectId, workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, status: "plan_ready" },
           { $set: update },
           { returnDocument: "after", session },
         );
@@ -63,16 +69,17 @@ export async function POST(request: Request, context: DecisionRouteContext) {
         decidedRun = serializeRun(response);
         const signalStatus = update.status;
         const planStatus = body.action === "approve" ? "approved" : "rejected";
-        const signals = await db.collection("signals").find({ "evidenceItems.runId": runId }, { session }).toArray();
+        const relatedSignalFilter = { workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, "evidenceItems.runId": runId };
+        const signals = await db.collection("signals").find(relatedSignalFilter, { session }).toArray();
         const signalIds = signals.map((signal) => signal._id?.toString()).filter((id): id is string => Boolean(id));
         if (signalIds.length > 0) {
           await db.collection("signals").updateMany(
-            { "evidenceItems.runId": runId },
+            relatedSignalFilter,
             { $set: { status: signalStatus, updatedAt: update.updatedAt } },
             { session },
           );
           await db.collection("plans").updateMany(
-            { signalId: { $in: signalIds }, status: { $ne: "rejected" } },
+            { workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, signalId: { $in: signalIds }, status: { $ne: "rejected" } },
             { $set: { status: planStatus, approvalDecision: decidedRun.founderDecision, updatedAt: update.updatedAt } },
             { session },
           );
