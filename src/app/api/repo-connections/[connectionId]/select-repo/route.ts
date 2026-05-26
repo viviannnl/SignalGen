@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
+import { writeAuditLog } from "@/lib/audit-log-db";
 import { findGitHubInstallationByWorkspace } from "@/lib/github-installation-db";
 import { findRepoConnectionById, updateRepoConnection } from "@/lib/repo-connection-db";
-import type { RepoConnection } from "@/lib/types";
+import type { AuditLog, RepoConnection } from "@/lib/types";
 import { resolveWorkspaceId } from "@/lib/workspace";
 
 type RepoConnectionSelectResponse = {
@@ -19,6 +20,17 @@ function isNonEmptyString(value: unknown): value is string {
 
 function logSelectRepoError(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : typeof error });
+}
+
+async function safeWriteAuditLog(entry: Omit<AuditLog, "_id">): Promise<void> {
+  try {
+    await writeAuditLog(entry);
+  } catch (error) {
+    console.error("Failed to write select repo audit log", {
+      action: entry.action,
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+  }
 }
 
 export async function PATCH(
@@ -68,6 +80,16 @@ export async function PATCH(
     if (!updated) {
       return NextResponse.json<RepoConnectionSelectErrorResponse>({ error: "Connection not found" }, { status: 404 });
     }
+
+    await safeWriteAuditLog({
+      workspaceId,
+      actorUserId: workspaceId,
+      action: "repo_connection.updated",
+      resourceType: "repo_connection",
+      resourceId: connectionId,
+      detail: { owner: updated.owner, repo: updated.repo, status: updated.status },
+      createdAt: updated.updatedAt,
+    });
 
     return NextResponse.json<RepoConnectionSelectResponse>({ connection: updated });
   } catch (error) {

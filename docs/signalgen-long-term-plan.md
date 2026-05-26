@@ -27,7 +27,7 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
 - M8 guarded implementation scaffold exists:
   - implementation jobs can be queued/simulated,
   - real repo writes/PR creation are not enabled by default.
-- Real GitHub PR automation M1–M3 are complete on the `feat/real-github-pr-automation` branch:
+- Real GitHub PR automation M1–M4 are complete on the `feat/real-github-pr-automation` branch:
   - security/product spec exists in `docs/github-pr-automation-spec.md`,
   - workspace-scoped repo connection, implementation job, and audit log types exist,
   - mocked repo connection API routes and tests exist,
@@ -91,7 +91,7 @@ Let SignalGen safely create branches, commits, and pull requests in a user's con
 
 ### Current state
 
-M8 created a guarded implementation/PR automation scaffold. M1–M3 of the real GitHub PR automation track are now complete on the branch and production has the GitHub App install/callback route deployed. The next active milestone is persisting installation metadata and adding user-visible repository selection/connection status.
+M8 created a guarded implementation/PR automation scaffold. M1–M4 of the real GitHub PR automation track are now complete on the `feat/real-github-pr-automation` branch: installation/repo metadata persistence, repository selection/status APIs and UI, gated first-class implementation jobs, mocked executor gates, audit logs, retry/failure handling, and a capability-disable kill switch are implemented. M5 remains: full verification, branch push, and one final PR.
 
 Current behavior:
 

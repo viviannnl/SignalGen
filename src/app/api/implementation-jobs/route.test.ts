@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCreateImplementationJob = vi.hoisted(() => vi.fn());
 const mockFindImplementationJobByIdempotencyKey = vi.hoisted(() => vi.fn());
+const mockWriteAuditLog = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mongodb", () => ({
   getSignalGenDb: vi.fn(),
@@ -10,6 +11,10 @@ vi.mock("@/lib/mongodb", () => ({
 vi.mock("@/lib/implementation-job-db", () => ({
   createImplementationJob: mockCreateImplementationJob,
   findImplementationJobByIdempotencyKey: mockFindImplementationJobByIdempotencyKey,
+}));
+
+vi.mock("@/lib/audit-log-db", () => ({
+  writeAuditLog: mockWriteAuditLog,
 }));
 
 vi.mock("@/lib/workspace", () => ({
@@ -51,7 +56,9 @@ describe("/api/implementation-jobs POST", () => {
     vi.resetModules();
     mockCreateImplementationJob.mockReset();
     mockFindImplementationJobByIdempotencyKey.mockReset();
+    mockWriteAuditLog.mockReset();
     mockFindImplementationJobByIdempotencyKey.mockResolvedValue(null);
+    mockWriteAuditLog.mockResolvedValue(undefined);
   });
 
   it("creates a new implementation job and returns 201", async () => {
@@ -73,7 +80,7 @@ describe("/api/implementation-jobs POST", () => {
     expect(mockCreateImplementationJob).toHaveBeenCalledOnce();
   });
 
-  it("returns 409 DuplicateJob when a non-cancelled job with the same idempotency key exists", async () => {
+  it("returns 409 DuplicateJob when a non-cancelled job with the same deterministic workspace/run key exists", async () => {
     const existing = makeJob({ status: "queued" });
     mockFindImplementationJobByIdempotencyKey.mockResolvedValue(existing);
 
@@ -82,7 +89,7 @@ describe("/api/implementation-jobs POST", () => {
       new Request("http://localhost/api/implementation-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(makeJobBody()),
+        body: JSON.stringify(makeJobBody({ idempotencyKey: "attacker-controlled-key" })),
       }),
     );
     const body = await response.json();
@@ -90,6 +97,7 @@ describe("/api/implementation-jobs POST", () => {
     expect(response.status).toBe(409);
     expect(body.error).toBe("DuplicateJob");
     expect(body.jobId).toBe("64f0c1f2a3b4c5d6e7f80901");
+    expect(mockFindImplementationJobByIdempotencyKey).toHaveBeenCalledWith("ws-test:run-1", "ws-test");
     expect(mockCreateImplementationJob).not.toHaveBeenCalled();
   });
 

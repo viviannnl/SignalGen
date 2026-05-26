@@ -5,6 +5,7 @@ import type { RepoConnection } from "@/lib/types";
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
 const mockUpdateRepoConnection = vi.hoisted(() => vi.fn());
 const mockFindGitHubInstallationByWorkspace = vi.hoisted(() => vi.fn());
+const mockWriteAuditLog = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mongodb", () => ({
   getSignalGenDb: vi.fn(),
@@ -17,6 +18,10 @@ vi.mock("@/lib/github-installation-db", () => ({
 vi.mock("@/lib/repo-connection-db", () => ({
   findRepoConnectionById: mockFindRepoConnectionById,
   updateRepoConnection: mockUpdateRepoConnection,
+}));
+
+vi.mock("@/lib/audit-log-db", () => ({
+  writeAuditLog: mockWriteAuditLog,
 }));
 
 vi.mock("@/lib/workspace", () => ({
@@ -69,8 +74,10 @@ describe("/api/repo-connections/[connectionId]/select-repo", () => {
     mockFindRepoConnectionById.mockReset();
     mockUpdateRepoConnection.mockReset();
     mockFindGitHubInstallationByWorkspace.mockReset();
+    mockWriteAuditLog.mockReset();
     mockFindRepoConnectionById.mockResolvedValue(makeRepoConnection());
     mockFindGitHubInstallationByWorkspace.mockResolvedValue(makeInstallation());
+    mockWriteAuditLog.mockResolvedValue(undefined);
     mockUpdateRepoConnection.mockResolvedValue(makeRepoConnection({
       owner: "viviannnl",
       repo: "SignalGen",

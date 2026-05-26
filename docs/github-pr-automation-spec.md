@@ -235,20 +235,20 @@ API routes should map these classes to the listed HTTP status code. Worker-only 
 Real PR automation can be enabled in any workspace only when all of the following are true:
 
 - [ ] A workspace has a valid GitHub App installation or equivalent least-privilege repo connection.
-- [ ] The repository connection is workspace-scoped and records owner, repo, default branch, installation ID, status, and capabilities.
+- [x] The repository connection is workspace-scoped and records owner, repo, default branch, installation ID, status, and capabilities.
 - [ ] The user approving the job belongs to that workspace and has an allowed approval role.
 - [ ] The job references a `plan_ready` or approved plan and linked signal evidence.
 - [ ] The dashboard approval explicitly authorizes implementation for that exact repo.
 - [ ] The approval screen shows the signal, evidence, recommended change, likely files/areas, repo target, expected branch name, and risk warning.
 - [ ] `repo_connection.capabilities.pr_creation === true` is enabled only after explicit workspace/repo approval.
-- [ ] Tests prove unapproved, wrong-workspace, missing-repo, disabled-capability, missing-token, and duplicate-job cases cannot call GitHub write APIs.
-- [ ] Integration tests use a mocked GitHub client and assert no write method is called until all security gates pass.
-- [ ] Implementation jobs persist workspace ID, repo connection ID, run/plan/signal references, approving user, branch, commit SHA, PR URL/number, attempts, errors, and logs.
-- [ ] Retries are idempotent and cannot create duplicate branches or PRs.
-- [ ] Audit records are written for approval, gate failures, attempted execution, retries, cancellation, and final result.
+- [x] Tests prove unapproved, wrong-workspace, missing-repo, disabled-capability, missing-token, and duplicate-job cases cannot call GitHub write APIs.
+- [x] Integration tests use a mocked GitHub client and assert no write method is called until all security gates pass.
+- [x] Implementation jobs persist workspace ID, repo connection ID, run/plan/signal references, approving user, branch, commit SHA, PR URL/number, attempts, errors, and logs.
+- [x] Retries are idempotent and cannot create duplicate branches or PRs.
+- [x] Audit records are written for approval, gate failures, attempted execution, retries, cancellation, and final result.
 - [ ] A sandbox repo smoke test succeeds before any real product repo is connected.
-- [ ] A manual kill switch or capability disable path can stop future writes for a workspace/repo.
-- [ ] Logs and API responses have been reviewed to ensure they do not expose secrets, tokens, private keys, or raw authorization headers.
+- [x] A manual kill switch or capability disable path can stop future writes for a workspace/repo.
+- [x] Logs and API responses have been reviewed to ensure they do not expose secrets, tokens, private keys, or raw authorization headers.
 
 ---
 

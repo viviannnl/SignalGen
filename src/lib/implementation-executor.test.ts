@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MockGitHubClient } from "./github-client";
+import { MockGitHubClient, type GitHubClient } from "./github-client";
 import type { GateContext } from "./implementation-gates";
 import type { ImplementationJob, RepoConnection } from "./types";
 
 const mockFindImplementationJobById = vi.hoisted(() => vi.fn());
 const mockUpdateImplementationJob = vi.hoisted(() => vi.fn());
+const mockWriteAuditLog = vi.hoisted(() => vi.fn());
 
 vi.mock("./implementation-job-db", () => ({
   findImplementationJobById: mockFindImplementationJobById,
   updateImplementationJob: mockUpdateImplementationJob,
+}));
+
+vi.mock("./audit-log-db", () => ({
+  writeAuditLog: mockWriteAuditLog,
 }));
 
 const { executeImplementationJob } = await import("./implementation-executor");
@@ -69,6 +74,18 @@ function buildValidContext(overrides: Partial<GateContext> = {}): GateContext {
   };
 }
 
+function makeThrowingClient(errorName: string): GitHubClient {
+  return {
+    createBranch: async () => {
+      const error = new Error("transient detail that must not be returned");
+      error.name = errorName;
+      throw error;
+    },
+    createCommit: async () => ({ sha: "sha" }),
+    openDraftPr: async () => ({ prUrl: "https://github.com/x/y/pull/1", prNumber: 1 }),
+  };
+}
+
 describe("executeImplementationJob", () => {
   let client: MockGitHubClient;
 
@@ -76,7 +93,9 @@ describe("executeImplementationJob", () => {
     client = new MockGitHubClient();
     mockFindImplementationJobById.mockReset();
     mockUpdateImplementationJob.mockReset();
+    mockWriteAuditLog.mockReset();
     mockUpdateImplementationJob.mockResolvedValue(null);
+    mockWriteAuditLog.mockResolvedValue(undefined);
   });
 
   it("returns error and makes no client calls when job is not found", async () => {
@@ -87,6 +106,7 @@ describe("executeImplementationJob", () => {
     expect(result).toEqual({ success: false, error: "Job not found" });
     expect(client.calls).toHaveLength(0);
     expect(mockUpdateImplementationJob).not.toHaveBeenCalled();
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 
   it("returns idempotency result and makes no client calls when job is already succeeded", async () => {
@@ -109,7 +129,7 @@ describe("executeImplementationJob", () => {
     expect(mockUpdateImplementationJob).not.toHaveBeenCalled();
   });
 
-  it("blocks and makes no client calls when workspace gate fails", async () => {
+  it("blocks, writes gate_failed audit, and makes no client calls when workspace gate fails", async () => {
     mockFindImplementationJobById.mockResolvedValue(buildValidJob());
 
     const result = await executeImplementationJob(JOB_ID, buildValidContext({ workspaceId: "wrong-ws" }), client);
@@ -121,6 +141,7 @@ describe("executeImplementationJob", () => {
       JOB_ID,
       expect.objectContaining({ status: "blocked" }),
     );
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "implementation_job.gate_failed" }));
   });
 
   it("blocks and makes no client calls when installation token is missing", async () => {
@@ -146,7 +167,7 @@ describe("executeImplementationJob", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("calls createBranch, createCommit, openDraftPr and marks succeeded when all gates pass", async () => {
+  it("calls createBranch, createCommit, openDraftPr, marks succeeded, and writes succeeded audit when all gates pass", async () => {
     mockFindImplementationJobById.mockResolvedValue(buildValidJob());
 
     const result = await executeImplementationJob(JOB_ID, buildValidContext(), client);
@@ -160,5 +181,57 @@ describe("executeImplementationJob", () => {
     const finalUpdate = mockUpdateImplementationJob.mock.calls.at(-1)?.[1];
     expect(finalUpdate?.status).toBe("succeeded");
     expect(finalUpdate?.prUrl).toContain("github.com");
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "implementation_job.succeeded" }));
+  });
+
+  it("sets status to failed and writes retry_scheduled audit for retry-eligible error under max attempts", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob({ attempts: 0 }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), makeThrowingClient("GitHubAPIError"));
+
+    expect(result).toEqual({ success: false, error: "GitHubAPIError during execution attempt 1" });
+    expect(mockUpdateImplementationJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        status: "failed",
+        errorClass: "GitHubAPIError",
+        errorMessage: "GitHubAPIError during execution attempt 1",
+      }),
+    );
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "implementation_job.retry_scheduled" }));
+  });
+
+  it("sets status to requires_attention and writes requires_attention audit for retry-eligible error at max attempts", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob({ attempts: 2 }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), makeThrowingClient("GitHubAPIError"));
+
+    expect(result).toEqual({ success: false, error: "GitHubAPIError during execution attempt 3" });
+    expect(mockUpdateImplementationJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        status: "requires_attention",
+        errorClass: "GitHubAPIError",
+        errorMessage: "GitHubAPIError during execution attempt 3",
+      }),
+    );
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "implementation_job.requires_attention" }));
+  });
+
+  it("sets status to requires_attention immediately for non-retry-eligible error", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob({ attempts: 0 }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), makeThrowingClient("UnexpectedGitHubClientError"));
+
+    expect(result).toEqual({ success: false, error: "UnexpectedGitHubClientError during execution attempt 1" });
+    expect(mockUpdateImplementationJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        status: "requires_attention",
+        errorClass: "UnexpectedGitHubClientError",
+        errorMessage: "UnexpectedGitHubClientError during execution attempt 1",
+      }),
+    );
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "implementation_job.requires_attention" }));
   });
 });

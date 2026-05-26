@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { writeAuditLog } from "@/lib/audit-log-db";
 import { createImplementationJob, findImplementationJobByIdempotencyKey } from "@/lib/implementation-job-db";
-import type { ImplementationJob } from "@/lib/types";
+import type { AuditLog, ImplementationJob } from "@/lib/types";
 import { resolveWorkspaceId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,17 @@ function logJobError(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : typeof error });
 }
 
+async function safeWriteAuditLog(entry: Omit<AuditLog, "_id">): Promise<void> {
+  try {
+    await writeAuditLog(entry);
+  } catch (error) {
+    console.error("Failed to write implementation job audit log", {
+      action: entry.action,
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+  }
+}
+
 export async function POST(
   request: Request,
 ): Promise<NextResponse<{ job: ImplementationJob } | { error: string; jobId?: string }>> {
@@ -42,16 +54,11 @@ export async function POST(
       typeof body === "object" && body !== null && "signalId" in body ? (body as CreateJobBody).signalId : undefined;
     const planId =
       typeof body === "object" && body !== null && "planId" in body ? (body as CreateJobBody).planId : undefined;
-    const bodyIdempotencyKey =
-      typeof body === "object" && body !== null && "idempotencyKey" in body
-        ? (body as CreateJobBody).idempotencyKey
-        : undefined;
-
     if (!isNonEmptyString(runId) || !isNonEmptyString(repoConnectionId) || !isNonEmptyString(approvedByUserId)) {
       return NextResponse.json({ error: "runId, repoConnectionId, and approvedByUserId are required" }, { status: 400 });
     }
 
-    const idempotencyKey = isNonEmptyString(bodyIdempotencyKey) ? bodyIdempotencyKey : `${workspaceId}:${runId}`;
+    const idempotencyKey = `${workspaceId}:${runId}`;
 
     const existing = await findImplementationJobByIdempotencyKey(idempotencyKey, workspaceId);
     if (existing && existing.status !== "cancelled") {
@@ -74,6 +81,16 @@ export async function POST(
       logs: [],
       createdAt: now,
       updatedAt: now,
+    });
+
+    await safeWriteAuditLog({
+      workspaceId,
+      actorUserId: job.approvedByUserId,
+      action: "implementation_job.created",
+      resourceType: "implementation_job",
+      resourceId: job._id!,
+      detail: { runId: job.runId, repoConnectionId: job.repoConnectionId, branchName: job.branchName },
+      createdAt: job.createdAt,
     });
 
     return NextResponse.json({ job }, { status: 201 });

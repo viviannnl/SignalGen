@@ -6,6 +6,7 @@ const mockCreateRepoConnection = vi.hoisted(() => vi.fn());
 const mockListRepoConnectionsByWorkspace = vi.hoisted(() => vi.fn());
 const mockFindRepoConnectionById = vi.hoisted(() => vi.fn());
 const mockUpdateRepoConnection = vi.hoisted(() => vi.fn());
+const mockWriteAuditLog = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mongodb", () => ({
   getSignalGenDb: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock("@/lib/repo-connection-db", () => ({
   listRepoConnectionsByWorkspace: mockListRepoConnectionsByWorkspace,
   findRepoConnectionById: mockFindRepoConnectionById,
   updateRepoConnection: mockUpdateRepoConnection,
+}));
+
+vi.mock("@/lib/audit-log-db", () => ({
+  writeAuditLog: mockWriteAuditLog,
 }));
 
 vi.mock("@/lib/workspace", () => ({
@@ -54,9 +59,11 @@ describe("/api/repo-connections", () => {
     mockListRepoConnectionsByWorkspace.mockReset();
     mockFindRepoConnectionById.mockReset();
     mockUpdateRepoConnection.mockReset();
+    mockWriteAuditLog.mockReset();
     mockListRepoConnectionsByWorkspace.mockResolvedValue([]);
     mockFindRepoConnectionById.mockResolvedValue(null);
     mockUpdateRepoConnection.mockResolvedValue(null);
+    mockWriteAuditLog.mockResolvedValue(undefined);
   });
 
   it("GET /api/repo-connections returns 200 with persisted workspace connections", async () => {
@@ -116,6 +123,7 @@ describe("/api/repo-connections", () => {
       createdByUserId: "workspace-test",
     });
     expect(mockCreateRepoConnection.mock.calls[0][0]._id).toBeUndefined();
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "repo_connection.created" }));
   });
 
   it("POST /api/repo-connections returns a safe 503 when persistence is unavailable", async () => {
