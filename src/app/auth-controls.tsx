@@ -2,6 +2,7 @@
 
 import { OrganizationSwitcher, SignInButton, UserButton, useUser } from "@clerk/nextjs";
 
+import { signalGenClerkAppearance } from "@/lib/clerk-appearance";
 import { hasUsableClerkPublishableKey } from "@/lib/clerk-env";
 
 export function AuthControls() {
@@ -36,6 +37,7 @@ function ConfiguredAuthControls() {
         <>
           <span className="font-medium text-slate-200">Workspace</span>
           <OrganizationSwitcher
+            appearance={signalGenClerkAppearance}
             afterCreateOrganizationUrl="/dashboard"
             afterLeaveOrganizationUrl="/dashboard"
             afterSelectOrganizationUrl="/dashboard"
@@ -43,7 +45,7 @@ function ConfiguredAuthControls() {
             createOrganizationMode="modal"
             organizationProfileMode="modal"
           />
-          <UserButton />
+          <UserButton appearance={signalGenClerkAppearance} />
         </>
       ) : null}
     </div>
