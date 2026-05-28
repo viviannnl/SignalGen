@@ -24,3 +24,49 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Clerk injects some component-specific styles after Tailwind classes. Keep the
+   embedded auth UI readable on SignalGen's dark dashboard and modal backdrop. */
+.cl-card,
+.cl-modalContent,
+.cl-organizationSwitcherPopoverCard,
+.cl-userButtonPopoverCard {
+  color: #f8fafc !important;
+}
+
+.cl-headerTitle,
+.cl-organizationPreviewMainIdentifier,
+.cl-userPreviewMainIdentifier,
+.cl-socialButtonsBlockButtonText,
+.cl-organizationSwitcherPopoverActionButtonText,
+.cl-userButtonPopoverActionButtonText {
+  color: #f8fafc !important;
+}
+
+.cl-headerSubtitle,
+.cl-formFieldLabel,
+.cl-footerActionText,
+.cl-organizationPreviewSecondaryIdentifier,
+.cl-userPreviewSecondaryIdentifier {
+  color: #cbd5e1 !important;
+}
+
+.cl-dividerText,
+.cl-footerPagesLink,
+.cl-modalCloseButton,
+.cl-organizationSwitcherTriggerIcon {
+  color: #94a3b8 !important;
+}
+
+.cl-formFieldInput {
+  background: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+.cl-formFieldInput::placeholder {
+  color: #64748b !important;
+}
+
+.cl-organizationSwitcherTrigger {
+  min-width: 0 !important;
+}
