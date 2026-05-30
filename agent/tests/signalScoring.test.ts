@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { analyzeRun, classifyComment, decideCluster } from "../src/tools/signals.js";
+import { analyzeRun, buildSignalClusters, classifyComment, decideCluster } from "../src/tools/signals.js";
 import type { SignalGenRun } from "../src/schemas.js";
 
 afterEach(() => {
@@ -22,6 +22,36 @@ describe("SignalGen signal scoring", () => {
     expect(decideCluster("feature_request", 2, "low")).toBe("needs_more_evidence");
     expect(decideCluster("feature_request", 3, "medium")).toBe("propose_plan");
     expect(decideCluster("bug", 1, "medium")).toBe("urgent_review");
+  });
+
+  it("splits separate atomic topics even when they share a screenshot or signal type", () => {
+    const clusters = buildSignalClusters([
+      {
+        id: "screenshot-comment-1",
+        text: "Can you submit applications with my resume directly, add more resume format options like PDF and DOCX, and fix the ugly confusing UI?",
+      },
+    ]);
+
+    expect(clusters.map((cluster) => cluster.title)).toEqual([
+      "Direct resume submission",
+      "Additional resume format options",
+      "UI visual polish concern",
+    ]);
+    expect(clusters.map((cluster) => cluster.type)).toEqual(["feature_request", "feature_request", "friction"]);
+    expect(clusters.every((cluster) => cluster.evidenceCommentIds.includes("screenshot-comment-1"))).toBe(true);
+  });
+
+  it("keeps distinct resume feature requests as separate clusters instead of merging by type", () => {
+    const clusters = buildSignalClusters([
+      { id: "comment-a", text: "Can you submit applications with my resume directly?" },
+      { id: "comment-b", text: "I need more resume format options like PDF and DOCX." },
+    ]);
+
+    expect(clusters.map((cluster) => cluster.title)).toEqual([
+      "Direct resume submission",
+      "Additional resume format options",
+    ]);
+    expect(clusters.map((cluster) => cluster.evidenceCommentIds)).toEqual([["comment-a"], ["comment-b"]]);
   });
 
   it("produces plan_ready when a run has repeated actionable comments", async () => {
