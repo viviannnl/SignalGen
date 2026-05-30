@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { AuthControls } from "../auth-controls";
 import type { ProductSignal, RepoConnection, SignalGenRun, SignalPlan } from "@/lib/types";
@@ -33,6 +33,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>("new-analysis");
   const [githubStatus, setGithubStatus] = useState<GitHubStatus>({ status: "loading" });
   const [selectedRepoConnectionId, setSelectedRepoConnectionId] = useState("");
+  const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
 
   const connectedRepos = useMemo(() => {
     if (githubStatus.status !== "connected") return [];
@@ -41,6 +42,10 @@ export default function DashboardPage() {
       : [githubStatus.repoConnection];
   }, [githubStatus]);
   const selectedRepo = connectedRepos.find((connection) => connection._id === selectedRepoConnectionId);
+  const selectedSignal = useMemo(
+    () => signals.find((signal) => signal._id === selectedSignalId) ?? null,
+    [selectedSignalId, signals],
+  );
 
   const loadSignals = useCallback(async (repoConnectionId: string) => {
     if (!repoConnectionId) {
@@ -105,6 +110,19 @@ export default function DashboardPage() {
 
   const latestRun = runs[0];
   const fileNames = useMemo(() => files.map((file) => file.name), [files]);
+
+  useEffect(() => {
+    if (!selectedSignal) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSelectedSignalId(null);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedSignal]);
 
   async function createRun() {
     if (!selectedRepoConnectionId) {
@@ -595,33 +613,42 @@ export default function DashboardPage() {
             <div className="mt-6 overflow-hidden rounded-3xl border border-white/10">
               {signals.length > 0 ? (
                 <div className="divide-y divide-white/10">
-                  {signals.map((signal) => (
-                    <div key={signal._id} className="grid gap-3 bg-slate-950/50 p-4 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center">
-                      <div>
-                        <p className="font-semibold">{signal.title}</p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {signal.type.replaceAll("_", " ")} · {signal.evidenceItemIds.length} evidence item{signal.evidenceItemIds.length !== 1 ? "s" : ""} · {new Date(signal.updatedAt).toLocaleString()}
+                  {signals.map((signal) => {
+                    const signalEvidenceItemIds = signal.evidenceItemIds ?? [];
+                    return (
+                      <button
+                        key={signal._id}
+                        type="button"
+                        onClick={() => setSelectedSignalId(signal._id)}
+                        className="grid w-full gap-3 bg-slate-950/50 p-4 text-left transition hover:bg-cyan-300/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-300/60 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center"
+                      >
+                        <div>
+                          <p className="font-semibold">{signal.title}</p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {formatSignalLabel(signal.type)} · {signalEvidenceItemIds.length} evidence item{signalEvidenceItemIds.length !== 1 ? "s" : ""} · {formatSignalDate(signal.updatedAt)}
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-slate-300">{signal.summary}</p>
+                        </div>
+                        <p className="text-sm text-slate-300">
+                          {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
                         </p>
-                        <p className="mt-2 text-sm leading-6 text-slate-300">{signal.summary}</p>
-                      </div>
-                      <p className="text-sm text-slate-300">
-                        {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
-                      </p>
-                      <div className="flex flex-col items-start gap-2 md:items-end">
-                        <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{signal.status.replaceAll("_", " ")}</span>
-                        <span className="text-xs text-slate-400">
-                          Strength {Math.round(signal.strength * 100)}% · Confidence {Math.round(signal.confidence * 100)}%
-                        </span>
-                        {signal.currentPlan?.approvalDecision ? (
+                        <div className="flex flex-col items-start gap-2 md:items-end">
+                          <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{formatSignalLabel(signal.status)}</span>
                           <span className="text-xs text-slate-400">
-                            Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {new Date(signal.currentPlan.approvalDecision.decidedAt).toLocaleString()}
+                            Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}
                           </span>
-                        ) : signal.status === "plan_ready" && signal.currentPlan ? (
-                          <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
+                          <span className="text-xs font-semibold text-cyan-200">View details →</span>
+                          {signal.currentPlan?.approvalDecision ? (
+                            <span className="text-xs text-slate-400">
+                              Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {formatSignalDate(signal.currentPlan.approvalDecision.decidedAt)}
+                            </span>
+                          ) : signal.status === "plan_ready" && signal.currentPlan ? (
+                            <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="p-5 text-slate-300">{selectedRepo ? "No signals yet for this repo." : "Choose a repo first. Each repo has its own signal memory."}</p>
@@ -652,7 +679,169 @@ export default function DashboardPage() {
           </section>
         ) : null}
       </div>
+      <SignalDetailDrawer
+        signal={selectedSignal}
+        signals={signals}
+        onSelectSignal={setSelectedSignalId}
+        onClose={() => setSelectedSignalId(null)}
+      />
     </main>
+  );
+}
+
+function SignalDetailDrawer({
+  signal,
+  signals,
+  onSelectSignal,
+  onClose,
+}: {
+  signal: ApiSignal | null;
+  signals: ApiSignal[];
+  onSelectSignal: (signalId: string) => void;
+  onClose: () => void;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!signal) return;
+    previouslyFocusedElement.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+
+    return () => {
+      previouslyFocusedElement.current?.focus();
+      previouslyFocusedElement.current = null;
+    };
+  }, [signal]);
+
+  if (!signal) return null;
+
+  const evidenceItems = signal.evidenceItems ?? [];
+  const evidenceItemIds = signal.evidenceItemIds ?? [];
+  const evidenceReferenceCount = evidenceItemIds.length;
+  const otherSignals = signals.filter((otherSignal) => otherSignal._id !== signal._id);
+  const plan = signal.currentPlan;
+  const decision = plan?.approvalDecision;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-sm" aria-label="Signal detail overlay">
+      <button type="button" aria-label="Close signal detail backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signal-detail-title"
+        className="relative h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#080b12] p-6 text-white shadow-2xl shadow-cyan-950/40 sm:p-8"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">Signal detail</p>
+            <h2 id="signal-detail-title" className="mt-3 text-3xl font-semibold tracking-tight">
+              {signal.title || "Untitled signal"}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{signal.summary || "Signal summary is not available yet."}</p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-white/10 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <SignalDetailMetric label="Type" value={formatSignalLabel(signal.type)} />
+          <SignalDetailMetric label="Status" value={formatSignalLabel(signal.status)} />
+          <SignalDetailMetric label="Evidence" value={`${evidenceReferenceCount} item${evidenceReferenceCount === 1 ? "" : "s"}`} />
+          <SignalDetailMetric label="Strength" value={formatSignalPercent(signal.strength)} />
+          <SignalDetailMetric label="Confidence" value={formatSignalPercent(signal.confidence)} />
+          <SignalDetailMetric label="Updated" value={formatSignalDate(signal.updatedAt)} />
+          <SignalDetailMetric label="Created" value={formatSignalDate(signal.createdAt)} />
+        </div>
+
+        <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Evidence</p>
+          {evidenceItems.length > 0 ? (
+            <div className="mt-4 space-y-4">
+              {evidenceItems.map((item) => (
+                <article key={item.id} className="rounded-2xl bg-slate-950/70 p-4">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-200">{formatSignalLabel(item.clusterType)}</span>
+                    <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-slate-300">Severity: {formatSignalLabel(item.severity)}</span>
+                    <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-slate-300">Decision: {formatSignalLabel(item.decision)}</span>
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold">{item.title || "Evidence item"}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{item.summary || "No evidence summary saved yet."}</p>
+                  <dl className="mt-4 grid gap-3 text-xs text-slate-400 sm:grid-cols-3">
+                    <SignalDetailInlineMetric label="Frequency" value={String(item.frequency ?? 0)} />
+                    <SignalDetailInlineMetric label="Confidence" value={formatSignalPercent(item.confidence)} />
+                    <SignalDetailInlineMetric label="Source run" value={item.runId || "Not linked"} />
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : evidenceReferenceCount > 0 ? (
+            <div className="mt-4 rounded-2xl bg-slate-950/70 p-4 text-sm leading-6 text-slate-300">
+              <p>Evidence references saved, but detailed evidence text is not available in this view yet.</p>
+              <p className="mt-2 text-xs text-slate-500">References: {evidenceItemIds.join(", ")}</p>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-2xl bg-slate-950/70 p-4 text-sm text-slate-400">No evidence has been saved for this signal yet.</p>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Recommended next step</p>
+          <p className="mt-3 text-sm leading-6 text-slate-200">
+            {plan?.recommendedChange ?? "Signal is still collecting evidence before a next step is proposed."}
+          </p>
+          {plan ? (
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <SignalDetailList title="Files to change" items={plan.filesToChange} />
+              <SignalDetailList title="Guardrails" items={plan.guardrails} />
+              <SignalDetailList title="Acceptance criteria" items={plan.acceptanceCriteria} />
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Decision memory</p>
+          {decision ? (
+            <div className="mt-3 text-sm leading-6 text-slate-200">
+              <p>Founder {decision.action === "approve" ? "approved" : "rejected"} this plan on {formatSignalDate(decision.decidedAt)}.</p>
+              {decision.note ? <p className="mt-2 text-slate-300">“{decision.note}”</p> : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-slate-400">No founder decision has been recorded for this signal yet.</p>
+          )}
+        </section>
+
+        {otherSignals.length > 0 ? (
+          <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Other signals</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Select another saved signal without leaving this detail drawer.
+            </p>
+            <div className="mt-4 space-y-2">
+              {otherSignals.map((otherSignal) => (
+                <button
+                  key={otherSignal._id}
+                  type="button"
+                  onClick={() => onSelectSignal(otherSignal._id)}
+                  className="w-full rounded-2xl bg-slate-950/70 p-3 text-left text-sm text-slate-200 transition hover:bg-cyan-300/10 focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+                >
+                  <span className="font-semibold">{otherSignal.title || "Untitled signal"}</span>
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {formatSignalLabel(otherSignal.status)} · {formatSignalDate(otherSignal.updatedAt)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </aside>
+    </div>
   );
 }
 
@@ -997,4 +1186,50 @@ function InfoCard({ title, items }: { title: string; items: string[] }) {
       </ul>
     </div>
   );
+}
+
+function SignalDetailMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-950/70 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-2 break-words text-sm font-semibold text-slate-100">{value}</p>
+    </div>
+  );
+}
+
+function SignalDetailInlineMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-slate-300">{value}</p>
+    </div>
+  );
+}
+
+function SignalDetailList({ title, items = [] }: { title: string; items?: string[] }) {
+  return (
+    <div className="rounded-2xl bg-slate-950/70 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">{title}</p>
+      <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
+        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li className="text-slate-500">No items saved yet.</li>}
+      </ul>
+    </div>
+  );
+}
+
+function formatSignalLabel(value: string | undefined): string {
+  if (!value) return "Not available";
+  return value.replaceAll("_", " ");
+}
+
+function formatSignalPercent(value: number | undefined): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return "Not available";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatSignalDate(value: string | undefined): string {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not available";
+  return date.toLocaleString();
 }
