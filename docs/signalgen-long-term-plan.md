@@ -24,13 +24,18 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
   - strong/actionable signals can become `plan_ready`,
   - first-class plans can be linked to signals.
 - Dashboard has an **All signals** view backed by `/api/signals`, with legacy run fallback.
-- M8 / repo-scoped implementation scaffold is complete and deployed on `main` in commit `6bb7e3e`:
+- M8 / repo-scoped implementation scaffold is complete and deployed on `main`:
   - connected repositories are visible in the dashboard repo picker,
   - the founder must select one explicit repo before creating runs, signals, decisions, implementation jobs, or PR work,
   - run/signal/decision/implementation/agent APIs fail closed without selected `repoConnectionId`,
   - DB mutations for active workflows include workspace/repo predicates,
   - implementation jobs can be queued/simulated,
   - real repo writes/PR creation remain guarded behind founder approval, repo capability flags, audit logs, and implementation gates.
+- Clickable signal detail and multi-signal persistence fixes are merged to `main` and deployed to production:
+  - signed-in OpenCLI Agent Chrome verification on `https://signalgen-delta.vercel.app/dashboard?repoConnectionId=6a17cb10aa40677164bc13c7` confirmed **18 signals** for `viviannnl/ai-cover-letter`,
+  - the latest one-screenshot run produced multiple durable signals instead of one collapsed signal,
+  - All signals cards open the detail drawer,
+  - browser console showed no app errors during verification.
 - Real GitHub PR automation M1–M4 are complete on the `feat/real-github-pr-automation` branch:
   - security/product spec exists in `docs/github-pr-automation-spec.md`,
   - workspace-scoped repo connection, implementation job, and audit log types exist,
@@ -410,34 +415,34 @@ Real auth/workspaces are production-ready when:
 
 ## 6. Recommended order of remaining work
 
-The safest order is:
+The safest order is now:
 
-1. **Finish and commit small local signal/dashboard bug fixes**
-   - Keep current signal UI consistent while planning larger work.
-
-2. **Real auth/workspaces foundation**
+1. **Production Clerk auth/workspaces**
    - Provider chosen: Clerk (`docs/2026-05-26-auth-workspaces-decision.md`).
-   - Implement session/workspace helper: scaffold started in `src/lib/auth.ts`; next wire Clerk session/org data.
-   - Enforce workspace filtering route-by-route.
-   - Add access-boundary tests.
+   - Finish production Clerk project/app setup and environment configuration outside the repo.
+   - Polish sign-in, sign-out, organization/workspace selection, and empty-state UX.
+   - Migrate protected routes from demo workspace fallback to authenticated workspace membership route by route.
+   - Add access-boundary tests proving workspace A cannot read or mutate workspace B data.
 
-3. **Repository connection model and GitHub App setup**
-   - Add repo connection data model and dashboard UI.
-   - Add GitHub App installation flow.
-   - Keep write capability disabled until tests and approvals pass.
+2. **Real PR automation behind hardened gates**
+   - Keep real branch/commit/push/PR creation disabled until every gate is verified.
+   - Finalize job state machine, idempotent retries, logs, audit trail, capability flags, and kill switch.
+   - Add approval UX that clearly names the target repo, signal, plan, branch, expected files/areas, and risk.
+   - Prove no-write-without-approval, wrong-workspace, missing-repo, and disabled-capability cases in tests.
 
-4. **Implementation job hardening**
-   - Finalize job state machine, idempotency, retries, logs, audit trail.
-   - Add approval UX and safety copy.
+3. **Sandbox real-PR smoke test**
+   - Enable write capability only for a controlled sandbox repo.
+   - Create an actual branch/commit/draft PR from an approved SignalGen job.
+   - Verify PR URL, commit SHA, audit logs, retry behavior, and failure states before widening access.
 
-5. **Real PR automation in sandbox only**
-   - Create branches/PRs against a controlled sandbox repo first.
-   - Verify audit trail, failure handling, retries, and no-write-without-approval tests.
+4. **Event/source integrations and scheduled processing**
+   - Add production-ready source ingestion for feedback channels and/or analytics events.
+   - Add scheduled/background processing so SignalGen updates signal memory without manual prompts.
+   - Add monitoring, failure visibility, and replay/idempotency controls for source events and agent processing.
 
-6. **Controlled production enablement**
-   - Enable per workspace/repo.
-   - Keep a kill switch.
-   - Monitor logs and job outcomes.
+5. **Controlled production enablement**
+   - Enable features per workspace/repo only after auth, PR automation, event processing, and monitoring are verified.
+   - Keep a manual kill switch and review logs/job outcomes before broadening access.
 
 ---
 
@@ -449,9 +454,8 @@ Decision: use Clerk first. See `docs/2026-05-26-auth-workspaces-decision.md`.
 
 Implementation still needs:
 
-- Clerk project/app setup,
-- env vars configured without exposing secret values,
-- Clerk-backed `requireAuthContext()` helper (scaffold exists in `src/lib/auth.ts`),
+- production Clerk project/app setup and env vars configured without exposing secret values,
+- sign-in/sign-out and organization/workspace selection UX polished for production,
 - route-by-route migration from demo workspace fallback to authenticated workspace membership,
 - access-boundary tests.
 

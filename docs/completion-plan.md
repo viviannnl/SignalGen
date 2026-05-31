@@ -18,6 +18,29 @@
 - Agent tick classifies/clusters evidence and marks strong signals `plan_ready`.
 - Founder approval/rejection gate stores structured decisions.
 
+## 2026-05-31 completion checkpoint
+
+The hackathon/demo MVP loop is complete enough to call the main loop done:
+
+```txt
+screenshot feedback
+→ extracted comments
+→ multiple durable product signals
+→ founder decision
+→ guarded implementation job/action
+→ persistent MongoDB memory
+```
+
+Production verification after merge confirmed:
+
+- PR branch `feat/clickable-signal-detail` was merged into `main`.
+- Vercel production deploy is ready on `https://signalgen-delta.vercel.app`.
+- Production health endpoint returns OK.
+- Signed-in OpenCLI Agent Chrome verification confirmed the repo-scoped dashboard for `viviannnl/ai-cover-letter` shows **18 signals** in **All signals**.
+- The latest screenshot/run is no longer collapsed into one signal; the signed-in UI shows multiple signals such as Direct Resume Submission, Additional resume format options, UI visual polish concerns, dashboard hierarchy concern, and praise/value validation.
+- Signal cards are clickable and open the signal detail drawer.
+- Browser console showed no app errors during signed-in verification.
+
 ---
 
 ## Step 1: Implementation action record after founder approval
@@ -90,9 +113,24 @@
 
 ## Future steps after hackathon-ready completion
 
-- Add real authentication/session protection.
-- Convert implementation job processor into actual guarded GitHub branch + PR automation.
-- Connect Vercel preview URLs from real PRs.
-- Move agent orchestration deeper into Google ADK / Gemini Enterprise Agent Platform runtime.
-- Add MongoDB MCP integration for partner-power scoring.
-- Add scheduled/event-driven processing through Cloud Scheduler or webhook subscriptions.
+The main remaining features are now production SaaS hardening, not the hackathon/demo loop:
+
+1. **Production Clerk auth/workspaces**
+   - Finish production Clerk project/environment setup.
+   - Replace demo/backward-compatible workspace behavior with real authenticated workspace/project membership.
+   - Add access-boundary tests proving one user/workspace cannot read or mutate another workspace's runs, signals, plans, repo connections, or implementation jobs.
+
+2. **Real PR automation behind hardened gates**
+   - Keep real branch/commit/push/PR creation disabled until ownership, workspace membership, founder approval, capability flags, audit logs, retry/idempotency, kill switch, and sandbox smoke tests are production-grade.
+   - Start with a controlled sandbox repo before enabling any real product repo writes.
+
+3. **Event/source integrations and scheduled processing**
+   - Move beyond manual screenshot/paste runs toward source/event ingestion from feedback channels and product analytics.
+   - Add scheduled/background processing so SignalGen continuously maintains signal memory.
+   - Add monitoring/failure visibility for ingestion and agent processing.
+
+Later/deeper platform work:
+
+- Connect Vercel preview URLs and deploy outcomes back into product memory.
+- Move agent orchestration deeper into Google ADK / Gemini Enterprise Agent Platform runtime when the product loop needs it.
+- Add MongoDB MCP or other scoring integrations only after the core production loop is stable.
