@@ -17,9 +17,10 @@ type EvidenceItem = {
   createdAt: string;
 };
 
-type ProductSignalDocument = {
+export type ProductSignalDocument = {
   _id?: ObjectId;
   workspaceId?: string;
+  repoConnectionId?: string;
   signalKey: string;
   type: string;
   title: string;
@@ -37,6 +38,7 @@ type ProductSignalDocument = {
 type SignalPlanDocument = {
   _id?: ObjectId;
   workspaceId?: string;
+  repoConnectionId?: string;
   signalId: string;
   recommendedChange: string;
   filesToChange: string[];
@@ -132,8 +134,16 @@ function buildSignalKey(type: string, title: string): string {
   return `${type}:${slugify(title)}`;
 }
 
-function workspaceFilter(workspaceId?: string) {
-  return workspaceId ? { workspaceId } : { $or: [{ workspaceId: { $exists: false } }, { workspaceId: undefined }] };
+export function buildMemoryScopeFilter(workspaceId?: string, repoConnectionId?: string) {
+  if (workspaceId && repoConnectionId) return { workspaceId, repoConnectionId };
+  if (workspaceId) return { workspaceId };
+  return { $or: [{ workspaceId: { $exists: false } }, { workspaceId: undefined }] };
+}
+
+export function buildSignalUpsertFilter(signal: Pick<ProductSignalDocument, "workspaceId" | "repoConnectionId" | "signalKey">) {
+  return signal.repoConnectionId
+    ? { workspaceId: signal.workspaceId, repoConnectionId: signal.repoConnectionId, signalKey: signal.signalKey }
+    : { workspaceId: signal.workspaceId, signalKey: signal.signalKey };
 }
 
 function computeSignalStatus(evidenceItems: EvidenceItem[]) {
@@ -179,9 +189,10 @@ export async function persistSignalMemoryForRun(run: SignalGenRun, result: Proce
 
   const now = new Date().toISOString();
   const workspaceId = (run as { workspaceId?: string }).workspaceId;
+  const repoConnectionId = (run as { repoConnectionId?: string }).repoConnectionId;
   const evidenceItems = clustersToEvidenceItems(run._id, result, now);
   const { runs, signals, plans } = await getSignalMemoryCollections();
-  const existingSignals = await signals.find(workspaceFilter(workspaceId)).toArray();
+  const existingSignals = await signals.find(buildMemoryScopeFilter(workspaceId, repoConnectionId)).toArray();
 
   const evidenceBySignalKey = new Map<string, EvidenceItem[]>();
   for (const evidence of evidenceItems) {
@@ -197,6 +208,7 @@ export async function persistSignalMemoryForRun(run: SignalGenRun, result: Proce
 
     const signalToInsert: Omit<ProductSignalDocument, "_id"> = {
       workspaceId,
+      repoConnectionId,
       signalKey,
       type: representativeEvidence.clusterType,
       title: representativeEvidence.title,
@@ -226,7 +238,7 @@ export async function persistSignalMemoryForRun(run: SignalGenRun, result: Proce
         { returnDocument: "after" },
       )
       : await signals.findOneAndUpdate(
-        { workspaceId, signalKey },
+        buildSignalUpsertFilter(signalToInsert),
         { $setOnInsert: signalToInsert },
         { upsert: true, returnDocument: "after" },
       );
@@ -254,9 +266,10 @@ export async function persistSignalMemoryForRun(run: SignalGenRun, result: Proce
     }
 
     if (status.status === "plan_ready") {
-      const existingPlan = await plans.findOne({ signalId, status: { $ne: "rejected" } });
+      const existingPlan = await plans.findOne({ ...buildMemoryScopeFilter(workspaceId, repoConnectionId), signalId, status: { $ne: "rejected" } });
       const planResult = existingPlan ? undefined : await plans.insertOne({
         workspaceId,
+        repoConnectionId,
         signalId,
         recommendedChange: result.plan?.recommendedChange ?? representativeEvidence.summary,
         filesToChange: result.plan?.filesToChange ?? [],
