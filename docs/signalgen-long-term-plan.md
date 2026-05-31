@@ -43,6 +43,12 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
   - production GitHub App install URL/callback routes are deployed behind signed state,
   - a GitHub App named `SignalGen Product Loop` is installed on Vivian's personal GitHub account with all-repositories access and code/issues/pull-request write permissions,
   - callback completion still leaves SignalGen repo-write capabilities disabled until repo selection, persistence, workspace/auth checks, and implementation executor gates are complete.
+- A controlled real-PR smoke test has succeeded against LetterGen:
+  - bot author: `app/signalgen-product-loop`,
+  - repo: `viviannnl/ai-cover-letter`,
+  - draft PR: `https://github.com/viviannnl/ai-cover-letter/pull/13`,
+  - branch: `signalgen/e2e-lettergen-format-options-20260531142306`,
+  - commit: `425df6c360eb7057be5b720834ce9c9fe205abf9`.
 - Workspace scaffold exists:
   - workspace fields and demo/backward-compatible behavior exist,
   - repo-scoped reads/writes now use workspace/repo filters,
@@ -50,7 +56,7 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
 
 ### Important current limitation
 
-SignalGen now lets the demo workspace view all GitHub App-installed repositories and requires one selected repo before active work. The current live GitHub App installation still belongs to Vivian's personal GitHub account because Vivian completed GitHub's owner/sudo flow while signed in as `@viviannnl`; it is not a generic user login flow. The product can analyze, remember, plan, queue/simulate implementation intent, persist repo selection in the dashboard, and receive a GitHub App installation callback in production. Real branch/commit/push/PR automation remains gated until real auth, workspace ownership, founder approval, auditability, and a sandbox smoke test are production-grade.
+SignalGen now lets the demo workspace view all GitHub App-installed repositories and requires one selected repo before active work. The current live GitHub App installation still belongs to Vivian's personal GitHub account because Vivian completed GitHub's owner/sudo flow while signed in as `@viviannnl`; it is not a generic user login flow. The product can analyze, remember, plan, queue/simulate implementation intent, persist repo selection in the dashboard, receive a GitHub App installation callback in production, and create a controlled draft PR in LetterGen. Broader real branch/commit/push/PR automation remains gated until real auth, workspace ownership, founder approval, auditability, retry/idempotency, and kill-switch behavior are production-grade for non-demo paths.
 
 ### Main remaining features before production SaaS readiness
 
@@ -62,8 +68,8 @@ The hackathon/MVP product loop is substantially complete. The remaining product 
    - Add access-boundary tests proving one user/workspace cannot read or mutate another workspace's runs, signals, plans, repo connections, or implementation jobs.
 
 2. **Real PR automation behind hardened gates**
-   - Keep branch/commit/push/PR creation disabled until repo ownership, workspace membership, founder approval, audit logging, capability flags, idempotent retries, and kill-switch behavior are verified in production.
-   - Start with a sandbox repository and prove actual GitHub branch/commit/draft-PR effects before widening access.
+   - The first controlled LetterGen real-PR smoke test is done (`viviannnl/ai-cover-letter#13`).
+   - Keep broad branch/commit/push/PR creation gated until repo ownership, workspace membership, founder approval, audit logging, capability flags, idempotent retries, failure handling, and kill-switch behavior are verified beyond Vivian's controlled demo path.
 
 3. **Event/source integrations and scheduled processing**
    - Move from manual prompt/run triggering toward event-driven or periodic processing.
@@ -262,7 +268,7 @@ Real PR automation can be enabled only when all are true:
 - The dashboard approval explicitly authorizes implementation for that repo.
 - Tests prove unapproved/wrong-workspace/missing-repo cases cannot call GitHub write APIs.
 - Audit records are written for approval, attempted execution, and final result.
-- A sandbox repo smoke test succeeds before any real product repo is connected.
+- A controlled repo smoke test succeeds before broader production enablement. First LetterGen smoke test completed with draft PR `viviannnl/ai-cover-letter#13`; remaining acceptance is hardening and verifying the same gates across production auth/workspace paths.
 
 ---
 

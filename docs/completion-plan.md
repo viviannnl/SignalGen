@@ -39,6 +39,7 @@ Production verification after merge confirmed:
 - Signed-in OpenCLI Agent Chrome verification confirmed the repo-scoped dashboard for `viviannnl/ai-cover-letter` shows **18 signals** in **All signals**.
 - The latest screenshot/run is no longer collapsed into one signal; the signed-in UI shows multiple signals such as Direct Resume Submission, Additional resume format options, UI visual polish concerns, dashboard hierarchy concern, and praise/value validation.
 - Signal cards are clickable and open the signal detail drawer.
+- Real GitHub App PR smoke test against the controlled LetterGen repo succeeded: SignalGen Product Loop bot opened draft PR `viviannnl/ai-cover-letter#13` from branch `signalgen/e2e-lettergen-format-options-20260531142306` with commit `425df6c360eb7057be5b720834ce9c9fe205abf9`.
 - Browser console showed no app errors during signed-in verification.
 
 ---
@@ -120,9 +121,9 @@ The main remaining features are now production SaaS hardening, not the hackathon
    - Replace demo/backward-compatible workspace behavior with real authenticated workspace/project membership.
    - Add access-boundary tests proving one user/workspace cannot read or mutate another workspace's runs, signals, plans, repo connections, or implementation jobs.
 
-2. **Real PR automation behind hardened gates**
-   - Keep real branch/commit/push/PR creation disabled until ownership, workspace membership, founder approval, capability flags, audit logs, retry/idempotency, kill switch, and sandbox smoke tests are production-grade.
-   - Start with a controlled sandbox repo before enabling any real product repo writes.
+2. **Real PR automation broader hardening**
+   - A controlled real-PR smoke test already succeeded against LetterGen (`viviannnl/ai-cover-letter#13`), so the remaining work is not “prove one PR can be created.”
+   - Keep broad production repo-write enablement gated until ownership, workspace membership, founder approval, capability flags, audit logs, retry/idempotency, and kill-switch behavior are production-grade for more than Vivian's controlled demo path.
 
 3. **Event/source integrations and scheduled processing**
    - Move beyond manual screenshot/paste runs toward source/event ingestion from feedback channels and product analytics.
