@@ -103,5 +103,85 @@ describe("persistSignalMemoryForRun repo scoping", () => {
     );
     expect(mocks.plans.findOne).toHaveBeenCalledWith({ workspaceId: "ws-123", repoConnectionId: "repo-456", signalId: "signal-1", status: { $ne: "rejected" } });
     expect(mocks.plans.insertOne).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws-123", repoConnectionId: "repo-456", signalId: "signal-1" }));
+    expect(mocks.signals.updateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "ws-123", repoConnectionId: "repo-456" }),
+      expect.any(Object),
+    );
+    expect(mocks.runs.updateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "ws-123", repoConnectionId: "repo-456" }),
+      expect.any(Object),
+    );
+  });
+
+  it("does not reuse the top run-level implementation plan for secondary plan-ready signals", async () => {
+    const run: SignalGenRun = {
+      _id: "64f0c1f2a3b4c5d6e7f80902",
+      status: "uploaded",
+      workspaceId: "ws-123",
+      repoConnectionId: "repo-456",
+      comments: ["Need format options", "Submit button is confusing"],
+    };
+    const result: ProcessRunResult = {
+      runId: "64f0c1f2a3b4c5d6e7f80902",
+      status: "plan_ready",
+      comments: ["Need format options", "Submit button is confusing"],
+      signal: {
+        title: "Additional resume format options",
+        summary: "Users want more supported resume format choices.",
+        confidence: 0.9,
+        evidence: ["Need format options"],
+      },
+      signalClusters: [
+        {
+          id: "feature_request-additional-resume-format-options-3",
+          type: "feature_request",
+          title: "Additional resume format options",
+          summary: "Users want more supported resume format choices.",
+          evidenceCommentIds: ["comment-1"],
+          severity: "medium",
+          frequency: 3,
+          confidence: 0.9,
+          decision: "propose_plan",
+          rationale: "Repeated feature request.",
+        },
+        {
+          id: "friction-confusing-submit-button-3",
+          type: "friction",
+          title: "Confusing submit button",
+          summary: "Users are confused about where to submit.",
+          evidenceCommentIds: ["comment-2"],
+          severity: "medium",
+          frequency: 3,
+          confidence: 0.88,
+          decision: "propose_plan",
+          rationale: "Repeated friction.",
+        },
+      ],
+      plan: {
+        recommendedChange: "Add format choices.",
+        filesToChange: ["resume-flow"],
+        guardrails: ["Founder approval required."],
+        acceptanceCriteria: ["Formats are visible."],
+      },
+    };
+
+    mocks.signals.findOneAndUpdate.mockImplementation(async (filter: { signalKey?: string }) => ({
+      _id: { toString: () => filter.signalKey?.includes("confusing-submit-button") ? "signal-submit" : "signal-format" },
+      evidenceItems: [],
+    }));
+
+    await persistSignalMemoryForRun(run, result);
+
+    const insertedPlans = mocks.plans.insertOne.mock.calls.map((call) => call[0]);
+    expect(insertedPlans).toHaveLength(2);
+    expect(insertedPlans[0]).toEqual(expect.objectContaining({
+      signalId: "signal-format",
+      recommendedChange: "Add format choices.",
+    }));
+    expect(insertedPlans[1]).toEqual(expect.objectContaining({
+      signalId: "signal-submit",
+      recommendedChange: expect.stringContaining("Confusing submit button"),
+      filesToChange: ["Product UI/content file to be selected after founder approval"],
+    }));
   });
 });

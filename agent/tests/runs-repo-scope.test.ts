@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildMemoryScopeFilter, buildSignalUpsertFilter, type ProductSignalDocument } from "../src/tools/runs.js";
+import { buildMemoryScopeFilter, buildScopedDocumentFilter, buildSignalUpsertFilter, type ProductSignalDocument } from "../src/tools/runs.js";
 
 describe("hosted worker signal memory repo scoping", () => {
   it("filters existing signals by both workspace and repo connection", () => {
@@ -10,6 +10,14 @@ describe("hosted worker signal memory repo scoping", () => {
   it("keeps legacy workspace-only scope for runs without a repo connection", () => {
     expect(buildMemoryScopeFilter("ws-123", undefined)).toEqual({ workspaceId: "ws-123" });
     expect(buildMemoryScopeFilter(undefined, undefined)).toEqual({ $or: [{ workspaceId: { $exists: false } }, { workspaceId: undefined }] });
+  });
+
+  it("adds workspace and repo scope to targeted hosted-worker update filters", () => {
+    expect(buildScopedDocumentFilter({ _id: "signal-1" }, "ws-123", "repo-456")).toEqual({
+      _id: "signal-1",
+      workspaceId: "ws-123",
+      repoConnectionId: "repo-456",
+    });
   });
 
   it("upserts new signals with the repo connection in the uniqueness filter", () => {
