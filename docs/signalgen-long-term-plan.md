@@ -2,7 +2,7 @@
 
 > **Canonical source of truth.** Use this document as the current long-term roadmap for SignalGen. Older dated plans in `docs/` are historical execution records; when product direction changes, update this file first.
 
-**Last updated:** 2026-05-26
+**Last updated:** 2026-05-31
 
 **Product thesis:** SignalGen is the memory layer of the founder's product iteration loop. It collects feedback/events, turns them into durable product signals, accumulates evidence, proposes plans only when evidence is strong enough, and eventually helps implement approved changes safely through audited PRs.
 
@@ -46,6 +46,24 @@ SignalGen is currently a staged, workspace-shaped SaaS prototype with a hosted w
 ### Important current limitation
 
 SignalGen now lets the demo workspace view all GitHub App-installed repositories and requires one selected repo before active work. The current live GitHub App installation still belongs to Vivian's personal GitHub account because Vivian completed GitHub's owner/sudo flow while signed in as `@viviannnl`; it is not a generic user login flow. The product can analyze, remember, plan, queue/simulate implementation intent, persist repo selection in the dashboard, and receive a GitHub App installation callback in production. Real branch/commit/push/PR automation remains gated until real auth, workspace ownership, founder approval, auditability, and a sandbox smoke test are production-grade.
+
+### Main remaining features before production SaaS readiness
+
+The hackathon/MVP product loop is substantially complete. The remaining product work is now concentrated in three production-grade feature areas:
+
+1. **Production Clerk auth/workspaces**
+   - Finish Clerk setup and environment configuration.
+   - Replace demo workspace fallbacks with authenticated workspace/project membership.
+   - Add access-boundary tests proving one user/workspace cannot read or mutate another workspace's runs, signals, plans, repo connections, or implementation jobs.
+
+2. **Real PR automation behind hardened gates**
+   - Keep branch/commit/push/PR creation disabled until repo ownership, workspace membership, founder approval, audit logging, capability flags, idempotent retries, and kill-switch behavior are verified in production.
+   - Start with a sandbox repository and prove actual GitHub branch/commit/draft-PR effects before widening access.
+
+3. **Event/source integrations and scheduled processing**
+   - Move from manual prompt/run triggering toward event-driven or periodic processing.
+   - Add production-ready source ingestion for feedback channels and/or product analytics events.
+   - Add scheduled/background processing, monitoring, and failure visibility so SignalGen continuously maintains signal memory.
 
 ---
 
