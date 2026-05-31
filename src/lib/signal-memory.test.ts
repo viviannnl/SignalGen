@@ -74,7 +74,7 @@ describe("projectRunClustersToSignalMemory", () => {
     const existingBugSignal = makeExistingSignal();
     const bugCluster = makeCluster({
       id: "bug-2",
-      title: "Different bug wording still same signal family",
+      title: "Repeated bug reports detected",
       evidenceCommentIds: ["comment-2"],
       frequency: 1,
     });
@@ -111,6 +111,7 @@ describe("projectRunClustersToSignalMemory", () => {
     const projection = projectRunClustersToSignalMemory("run-plan", [makeCluster({ frequency: 3 })], [], [], {
       workspaceId: "ws-1",
       now: "2026-01-01T00:00:00.000Z",
+      sourcePlanSignalTitle: "Repeated bug reports detected",
       sourcePlan: {
         recommendedChange: "Use the specific generated plan.",
         filesToChange: ["src/app/dashboard/page.tsx"],
@@ -144,6 +145,85 @@ describe("projectRunClustersToSignalMemory", () => {
     expect(projection.signalsToCreate).toHaveLength(1);
     expect(projection.signalsToUpdate).toHaveLength(0);
     expect(projection.signalsToCreate[0].signalKey).toBe("bug:upload-button-fails-on-safari");
+  });
+
+  it("does not collapse specific screenshot asks into an existing generic feature signal", () => {
+    const genericFeatureSignal = makeExistingSignal({
+      _id: "sig-feature-generic",
+      type: "feature_request",
+      title: "Repeated feature request detected",
+      signalKey: "feature_request:repeated-feature-request-detected",
+    });
+    const directSubmissionCluster = makeCluster({
+      id: "feature-direct-resume-submission",
+      type: "feature_request",
+      title: "Direct resume submission",
+      summary: "Users want the product to submit or apply with their resume directly.",
+      evidenceCommentIds: ["comment-1"],
+      frequency: 1,
+      decision: "store_only",
+    });
+    const formatOptionsCluster = makeCluster({
+      id: "feature-additional-resume-format-options",
+      type: "feature_request",
+      title: "Additional resume format options",
+      summary: "Users want more supported resume format choices.",
+      evidenceCommentIds: ["comment-4"],
+      frequency: 1,
+      decision: "store_only",
+    });
+
+    const projection = projectRunClustersToSignalMemory(
+      "run-lettergen-screenshot",
+      [directSubmissionCluster, formatOptionsCluster],
+      [genericFeatureSignal],
+      [],
+      opts,
+    );
+
+    expect(projection.signalsToUpdate).toHaveLength(0);
+    expect(projection.signalsToCreate.map((signal) => signal.signalKey).sort()).toEqual([
+      "feature_request:additional-resume-format-options",
+      "feature_request:direct-resume-submission",
+    ]);
+  });
+
+  it("only reuses the run-level source plan for the matching top signal", () => {
+    const directSubmissionCluster = makeCluster({
+      id: "feature-direct-resume-submission",
+      type: "feature_request",
+      title: "Direct resume submission",
+      evidenceCommentIds: ["comment-1", "comment-2", "comment-3"],
+      frequency: 3,
+      severity: "medium",
+      decision: "propose_plan",
+    });
+    const formatOptionsCluster = makeCluster({
+      id: "feature-additional-resume-format-options",
+      type: "feature_request",
+      title: "Additional resume format options",
+      evidenceCommentIds: ["comment-4", "comment-5", "comment-6"],
+      frequency: 3,
+      severity: "medium",
+      decision: "propose_plan",
+    });
+
+    const projection = projectRunClustersToSignalMemory("run-multi-plan", [directSubmissionCluster, formatOptionsCluster], [], [], {
+      workspaceId: "ws-1",
+      now,
+      sourcePlanSignalTitle: "Additional resume format options",
+      sourcePlan: {
+        recommendedChange: "Draft a product improvement for: Additional resume format options.",
+        filesToChange: ["Resume format selector"],
+        guardrails: ["Founder approval required."],
+        acceptanceCriteria: ["Users can choose another resume format."],
+      },
+    });
+
+    const planBySignalId = new Map(projection.plansToCreate.map((plan) => [plan.signalId, plan]));
+    expect(planBySignalId.get("new-signal-run-multi-plan-0")?.recommendedChange).toContain("Direct resume submission");
+    expect(planBySignalId.get("new-signal-run-multi-plan-0")?.recommendedChange).not.toContain("Additional resume format options");
+    expect(planBySignalId.get("new-signal-run-multi-plan-1")?.recommendedChange).toBe("Draft a product improvement for: Additional resume format options.");
   });
 
   it("keeps a weak signal accumulating instead of marking it plan_ready", () => {

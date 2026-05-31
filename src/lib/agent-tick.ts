@@ -56,6 +56,7 @@ export async function processAgentTick(
         repoConnectionId: run.repoConnectionId,
         now: update.processedAt ?? update.updatedAt,
         sourcePlan: update.plan,
+        sourcePlanSignalTitle: update.signal?.title,
       });
       await store.persistSignalMemory({ ...run, ...update }, projection);
     }

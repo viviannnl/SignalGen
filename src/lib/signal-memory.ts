@@ -71,7 +71,7 @@ function signalKeyFor(signal: Pick<ProductSignal, "type" | "title" | "signalKey"
   return signal.signalKey || normalizeSignalKey(signal.type, signal.title);
 }
 
-function isGenericSignal(signal: ProductSignal): boolean {
+function isGenericSignal(signal: Pick<ProductSignal, "type" | "title">): boolean {
   return signal.title === genericTitleFor(signal.type);
 }
 
@@ -91,7 +91,8 @@ export function matchEvidenceToSignals(
     const itemKey = normalizeSignalKey(item.clusterType, item.title);
     const candidates = existingSignals.filter((signal) => signal._id && signal.type === item.clusterType);
     const exactMatch = candidates.find((signal) => signalKeyFor(signal) === itemKey);
-    const genericMatch = exactMatch ? undefined : candidates.find((signal) => isGenericSignal(signal));
+    const itemIsGeneric = isGenericSignal({ type: item.clusterType, title: item.title });
+    const genericMatch = exactMatch || !itemIsGeneric ? undefined : candidates.find((signal) => isGenericSignal(signal));
     const bestMatch = exactMatch ?? genericMatch;
 
     if (!bestMatch?._id) {
@@ -195,16 +196,21 @@ export function buildPlanForSignal(
   now: string,
   sourcePlan?: Pick<SignalPlan, "recommendedChange" | "filesToChange" | "guardrails" | "acceptanceCriteria">,
   repoConnectionId?: string,
+  sourcePlanSignalTitle?: string,
 ): Omit<SignalPlan, "_id"> {
+  const reusableSourcePlan = sourcePlan && sourcePlanSignalTitle && signal.title === sourcePlanSignalTitle ? sourcePlan : undefined;
+
   return {
     workspaceId,
     repoConnectionId,
     signalId,
-    recommendedChange: sourcePlan?.recommendedChange ?? `Draft a small, reviewable product improvement for: ${signal.title}. Cite the accumulated evidence before asking for founder approval.`,
-    filesToChange: sourcePlan?.filesToChange?.length ? sourcePlan.filesToChange : ["Product UI/content file to be selected after founder approval"],
-    guardrails: sourcePlan?.guardrails?.length ? sourcePlan.guardrails : HARDCODED_GUARDRAILS,
-    acceptanceCriteria: sourcePlan?.acceptanceCriteria?.length
-      ? sourcePlan.acceptanceCriteria
+    recommendedChange: reusableSourcePlan
+      ? reusableSourcePlan.recommendedChange
+      : `Draft a small, reviewable product improvement for: ${signal.title}. Cite the accumulated evidence before asking for founder approval.`,
+    filesToChange: reusableSourcePlan?.filesToChange?.length ? reusableSourcePlan.filesToChange : ["Product UI/content file to be selected after founder approval"],
+    guardrails: reusableSourcePlan?.guardrails?.length ? reusableSourcePlan.guardrails : HARDCODED_GUARDRAILS,
+    acceptanceCriteria: reusableSourcePlan?.acceptanceCriteria?.length
+      ? reusableSourcePlan.acceptanceCriteria
       : [
           "Plan cites the feedback evidence that triggered it.",
           "Change is limited to approved product surfaces.",
@@ -235,6 +241,7 @@ export function projectRunClustersToSignalMemory(
     repoConnectionId?: string;
     now?: string;
     sourcePlan?: Pick<SignalPlan, "recommendedChange" | "filesToChange" | "guardrails" | "acceptanceCriteria">;
+    sourcePlanSignalTitle?: string;
   },
 ): SignalMemoryProjection {
   const now = opts.now ?? new Date().toISOString();
@@ -262,14 +269,16 @@ export function projectRunClustersToSignalMemory(
 
     const alreadyHasPlan = signal.currentPlanId || existingPlans.some((plan) => plan.signalId === signalId && plan.status !== "rejected");
     if (update.status === "plan_ready" && !alreadyHasPlan) {
-      plansToCreate.push(buildPlanForSignal({ ...signal, ...update }, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan, signal.repoConnectionId ?? opts.repoConnectionId));
+      plansToCreate.push(
+        buildPlanForSignal({ ...signal, ...update }, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan, signal.repoConnectionId ?? opts.repoConnectionId, opts.sourcePlanSignalTitle),
+      );
     }
   }
 
   signalsToCreate.forEach((signal, index) => {
     if (signal.status !== "plan_ready") return;
     const signalId = `new-signal-${runId}-${index}`;
-    plansToCreate.push(buildPlanForSignal(signal, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan, signal.repoConnectionId ?? opts.repoConnectionId));
+    plansToCreate.push(buildPlanForSignal(signal, signalId, signal.workspaceId ?? opts.workspaceId, now, opts.sourcePlan, signal.repoConnectionId ?? opts.repoConnectionId, opts.sourcePlanSignalTitle));
   });
 
   return {
