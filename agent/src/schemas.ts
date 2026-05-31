@@ -61,6 +61,8 @@ export type Signal = {
 
 export type SignalGenRun = {
   _id?: string;
+  workspaceId?: string;
+  repoConnectionId?: string;
   source?: string;
   status: RunStatus;
   screenshotNames?: string[];

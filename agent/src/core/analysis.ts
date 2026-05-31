@@ -8,12 +8,12 @@ import type {
   SignalType,
 } from "../schemas.js";
 
-const BUG_WORDS = ["bug", "broken", "crash", "error", "fail", "cannot", "can't", "doesn't work", "stuck"];
-const FEATURE_WORDS = ["can you add", "feature", "would love", "need", "wish", "support", "integration"];
-const FRICTION_WORDS = ["confusing", "hard", "unclear", "don't understand", "takes too long", "generic"];
-const TRUST_WORDS = ["trust", "fake", "scam", "safe", "secure", "ai-generated", "obviously ai"];
-const PRICING_WORDS = ["price", "pricing", "expensive", "cost", "free", "trial", "subscription"];
-const PRAISE_WORDS = ["love", "great", "helpful", "amazing", "awesome", "works well"];
+const BUG_WORDS = ["bug", "broken", "crash", "error", "fail", "cannot", "can't", "doesn't work", "stuck", "不能用", "报错", "坏了", "失败", "卡住"];
+const FEATURE_WORDS = ["can you add", "feature", "would love", "need", "wish", "support", "integration", "能不能", "可以", "有没有", "选择", "支持"];
+const FRICTION_WORDS = ["confusing", "hard", "unclear", "don't understand", "takes too long", "generic", "ugly", "丑", "难用", "不好看", "不清楚"];
+const TRUST_WORDS = ["trust", "fake", "scam", "safe", "secure", "ai-generated", "obviously ai", "安全", "真假", "骗子"];
+const PRICING_WORDS = ["price", "pricing", "expensive", "cost", "free", "trial", "subscription", "价格", "贵", "免费", "订阅"];
+const PRAISE_WORDS = ["love", "great", "helpful", "amazing", "awesome", "works well", "save my life", "喜欢", "感谢", "非常好", "解决痛点"];
 const GEMINI_TIMEOUT_MS = 30_000;
 const GEMINI_MODEL = "gemini-2.5-flash";
 const HARDCODED_GUARDRAILS = [
@@ -53,6 +53,12 @@ export function decideCluster(type: SignalType, frequency: number, severity: Sig
   return "store_only";
 }
 
+type SignalTopic = {
+  key: string;
+  title: string;
+  summary: string;
+};
+
 function titleFor(type: SignalType): string {
   switch (type) {
     case "bug":
@@ -85,28 +91,107 @@ function rationaleFor(type: SignalType, frequency: number, severity: SignalSever
   return "Evidence is too weak or noisy for action; store in memory only.";
 }
 
+function hasResumeContext(lower: string): boolean {
+  return lower.includes("resume") || lower.includes("cv") || lower.includes("简历");
+}
+
+function topicsForComment(text: string): Array<{ type: SignalType; topic: SignalTopic }> {
+  const lower = text.toLowerCase();
+  const topics: Array<{ type: SignalType; topic: SignalTopic }> = [];
+  const resumeContext = hasResumeContext(lower);
+
+  if (resumeContext && (lower.includes("submit") || lower.includes("apply") || lower.includes("application") || lower.includes("投") || lower.includes("递交"))) {
+    topics.push({
+      type: "feature_request",
+      topic: {
+        key: "direct-resume-submission",
+        title: "Direct resume submission",
+        summary: "Users want the product to submit or apply with their resume directly, not only generate cover-letter material.",
+      },
+    });
+  }
+
+  if (resumeContext && (lower.includes("format") || lower.includes("type") || lower.includes("pdf") || lower.includes("docx") || lower.includes("格式"))) {
+    topics.push({
+      type: "feature_request",
+      topic: {
+        key: "additional-resume-format-options",
+        title: "Additional resume format options",
+        summary: "Users want more supported resume format choices when using the resume flow.",
+      },
+    });
+  }
+
+  if (lower.includes("ui") || lower.includes("ugly") || lower.includes("丑") || lower.includes("不好看")) {
+    topics.push({
+      type: "friction",
+      topic: {
+        key: "ui-visual-polish-concern",
+        title: "UI visual polish concern",
+        summary: "Users are reacting negatively to the product's visual design or polish.",
+      },
+    });
+  }
+
+  if (topics.length > 0) return topics;
+
+  const type = classifyComment(text);
+  if (type === "praise" && (lower.includes("save my life") || lower.includes("喜欢") || lower.includes("非常好") || lower.includes("感谢") || lower.includes("解决痛点"))) {
+    return [
+      {
+        type,
+        topic: {
+          key: "positive-product-validation",
+          title: "Positive product validation",
+          summary: "Users are expressing satisfaction that the product idea solves a real pain point.",
+        },
+      },
+    ];
+  }
+
+  return [
+    {
+      type,
+      topic: {
+        key: type,
+        title: titleFor(type),
+        summary: "Related feedback was grouped by signal type because no narrower topic was detected.",
+      },
+    },
+  ];
+}
+
 type CommentInput = string | { id?: string; text: string };
 
 export function buildSignalClusters(comments: CommentInput[]): SignalCluster[] {
-  const grouped = new Map<SignalType, Array<{ id: string; text: string }>>();
+  const grouped = new Map<string, { type: SignalType; topic: SignalTopic; items: Array<{ id: string; text: string }> }>();
 
   comments.forEach((comment, index) => {
     const item = typeof comment === "string" ? { id: `comment-${index + 1}`, text: comment } : { id: comment.id || `comment-${index + 1}`, text: comment.text };
-    const type = classifyComment(item.text);
-    grouped.set(type, [...(grouped.get(type) ?? []), item]);
+
+    for (const { type, topic } of topicsForComment(item.text)) {
+      const groupKey = `${type}:${topic.key}`;
+      const existing = grouped.get(groupKey);
+
+      if (existing) {
+        existing.items.push(item);
+      } else {
+        grouped.set(groupKey, { type, topic, items: [item] });
+      }
+    }
   });
 
-  return Array.from(grouped.entries()).map(([type, items]) => {
+  return Array.from(grouped.values()).map(({ type, topic, items }) => {
     const frequency = items.length;
     const severity = severityFor(type, frequency);
     const decision = decideCluster(type, frequency, severity);
     const confidence = Math.min(0.55 + frequency * 0.12, 0.95);
 
     return {
-      id: `${type}-${frequency}`,
+      id: `${type}-${topic.key}-${frequency}`,
       type,
-      title: titleFor(type),
-      summary: `${frequency} related comment${frequency === 1 ? "" : "s"} classified as ${type.replace("_", " ")}.`,
+      title: topic.title,
+      summary: topic.key === type ? `${frequency} related comment${frequency === 1 ? "" : "s"} classified as ${type.replace("_", " ")}.` : topic.summary,
       evidenceCommentIds: items.map((item) => item.id),
       severity,
       frequency,
@@ -233,16 +318,22 @@ function buildGeminiAnalysisPrompt(comments: string[]): string {
 
   return `You are SignalGen, an expert product analyst and AI feedback agent.
 
-A founder has collected the following customer/social media feedback comments. Analyze them and identify the strongest product signal.
+A founder has collected the following customer/social media feedback comments. Analyze them and identify every distinct product signal.
 
 Comments (numbered for reference):
 ${numberedComments}
 
 Instructions:
-1. Classify and cluster semantically related comments into signal groups.
+1. Create one cluster per atomic user need, pain point, objection, praise theme, or bug. Do NOT merge separate asks just because they share the same signal type.
 2. For each cluster, determine its type, severity, decision, and which original comment numbers belong.
 3. Select the most actionable cluster as the top signal.
-4. If the top signal's decision is "propose_plan", generate a specific implementation plan for the product change.
+4. If the top signal's decision is "propose_plan", generate a specific implementation plan for that one top product change.
+
+Atomic clustering rules:
+- A direct-resume-submission request and a resume-format-options request are two separate feature_request clusters, even though both mention resumes.
+- A UI/visual-polish complaint is a friction cluster, separate from feature requests.
+- Praise/validation belongs in a praise cluster unless the same sentence also contains a concrete request; keep the concrete request as its own cluster.
+- One screenshot can produce several saved signals. Prefer narrower clusters over broad labels such as "Enhanced Resume Functionality Requests".
 
 Signal types:
 - "bug": crashes, errors, broken features, things that don't work
@@ -354,8 +445,67 @@ function validateGeminiAnalysisResponse(value: unknown, commentCount: number): G
   };
 }
 
+function clusterFromCommentGroup(type: SignalType, topic: SignalTopic, commentIndices: number[], requested: Pick<SignalCluster, "severity" | "decision" | "confidence" | "rationale">): SignalCluster {
+  const frequency = commentIndices.length;
+  const severity = severityFor(type, frequency);
+  const decision = requested.decision === "propose_plan" && decisionAllowsProposePlan(type, frequency) ? requested.decision : decideCluster(type, frequency, severity);
+
+  return {
+    id: `${type}-${topic.key}-${frequency}`,
+    type,
+    title: topic.title,
+    summary: topic.key === type ? `${frequency} related comment${frequency === 1 ? "" : "s"} classified as ${type.replace("_", " ")}.` : topic.summary,
+    evidenceCommentIds: commentIndices.map((commentIndex) => `comment-${commentIndex}`),
+    severity,
+    frequency,
+    confidence: Math.min(requested.confidence, 0.95),
+    decision,
+    rationale: decision === requested.decision ? requested.rationale : rationaleFor(type, frequency, severity, decision),
+  };
+}
+
+function decisionAllowsProposePlan(type: SignalType, frequency: number): boolean {
+  return (type === "bug" && frequency >= 2) || (["feature_request", "friction", "trust_objection"].includes(type) && frequency >= 3);
+}
+
+function splitClusterByAtomicTopics(cluster: SignalCluster, comments: string[]): SignalCluster[] {
+  const byTopic = new Map<string, { type: SignalType; topic: SignalTopic; indices: number[] }>();
+
+  for (const commentId of cluster.evidenceCommentIds) {
+    const match = /^comment-(\d+)$/.exec(commentId);
+    const commentIndex = match ? Number(match[1]) : Number.NaN;
+    const text = Number.isInteger(commentIndex) ? comments[commentIndex - 1] : undefined;
+    if (!text) continue;
+
+    for (const { type, topic } of topicsForComment(text)) {
+      const key = `${type}:${topic.key}`;
+      const existing = byTopic.get(key);
+      if (existing) {
+        existing.indices.push(commentIndex);
+      } else {
+        byTopic.set(key, { type, topic, indices: [commentIndex] });
+      }
+    }
+  }
+
+  if (byTopic.size <= 1) return [cluster];
+
+  return Array.from(byTopic.values()).map(({ type, topic, indices }) =>
+    clusterFromCommentGroup(type, topic, indices, {
+      severity: cluster.severity,
+      decision: cluster.decision,
+      confidence: cluster.confidence,
+      rationale: cluster.rationale,
+    }),
+  );
+}
+
+function splitGeminiClustersByAtomicTopics(clusters: SignalCluster[], comments: string[]): SignalCluster[] {
+  return clusters.flatMap((cluster) => splitClusterByAtomicTopics(cluster, comments));
+}
+
 function mapGeminiAnalysisToRun(run: SignalGenRun, response: GeminiSignalAnalysisResponse): Partial<SignalGenRun> {
-  const signalClusters: SignalCluster[] = response.clusters.map((cluster) => ({
+  const rawSignalClusters: SignalCluster[] = response.clusters.map((cluster) => ({
     id: `${cluster.type}-${cluster.evidenceIndices.length}`,
     type: cluster.type,
     title: cluster.title,
@@ -367,8 +517,17 @@ function mapGeminiAnalysisToRun(run: SignalGenRun, response: GeminiSignalAnalysi
     decision: cluster.decision,
     rationale: cluster.rationale,
   }));
-  const topCluster = signalClusters[response.topSignalIndex];
-  const sourceTopCluster = response.clusters[response.topSignalIndex];
+  const signalClusters = splitGeminiClustersByAtomicTopics(rawSignalClusters, run.comments ?? []);
+  const originalTopCluster = rawSignalClusters[response.topSignalIndex];
+  const topCluster = selectTopCluster(signalClusters) ?? originalTopCluster;
+  const topEvidenceCommentIds = new Set(topCluster.evidenceCommentIds);
+  const originalTopEvidenceCommentIds = new Set(originalTopCluster.evidenceCommentIds);
+  const canReuseGeminiPlan =
+    Boolean(response.implementationPlan) &&
+    topCluster.decision === "propose_plan" &&
+    topCluster.title === originalTopCluster.title &&
+    topCluster.evidenceCommentIds.length === originalTopCluster.evidenceCommentIds.length &&
+    topCluster.evidenceCommentIds.every((commentId) => originalTopEvidenceCommentIds.has(commentId));
   const now = new Date().toISOString();
 
   return {
@@ -379,9 +538,9 @@ function mapGeminiAnalysisToRun(run: SignalGenRun, response: GeminiSignalAnalysi
       title: topCluster.title,
       summary: topCluster.summary,
       confidence: topCluster.confidence,
-      evidence: sourceTopCluster.evidenceIndices.map((evidenceIndex) => run.comments?.[evidenceIndex - 1]).filter((comment): comment is string => Boolean(comment)),
+      evidence: (run.comments ?? []).filter((_, index) => topEvidenceCommentIds.has(`comment-${index + 1}`)),
     },
-    plan: response.implementationPlan && topCluster.decision === "propose_plan"
+    plan: canReuseGeminiPlan && response.implementationPlan
       ? {
           recommendedChange: response.implementationPlan.recommendedChange,
           filesToChange: response.implementationPlan.filesToChange,
