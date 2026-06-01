@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "SignalGen2-redesign/**",
+    "redesign-handoff.md",
   ]),
 ]);
 
