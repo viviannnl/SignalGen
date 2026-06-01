@@ -1,37 +1,259 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font);
+  --font-mono: var(--mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ============================================================
+   SignalGen · Soft Studio — design tokens & component system
+   Warm blush & plum · soft / muted · pillowy · flat
+   ============================================================ */
+
+:root {
+  /* Surfaces */
+  --bg:        #FBF4EF;   /* warm cream */
+  --bg-alt:    #F7ECE5;   /* slightly deeper cream */
+  --card:      #FFFFFF;
+  --panel:     #FAEDE9;   /* blush inset panel */
+  --panel-2:   #F6E6DE;   /* warm peach panel */
+
+  /* Ink */
+  --ink:       #3A2A30;   /* deep plum-brown — primary text */
+  --ink-soft:  #94787F;   /* muted mauve — secondary text */
+  --ink-faint: #B6A2A8;   /* tertiary / meta */
+
+  /* Lines */
+  --line:        #F0E1DB;
+  --line-strong: #E6D2CB;
+
+  /* Brand */
+  --primary:        #7A3B4E;   /* deep plum — primary action (trust) */
+  --primary-hover:  #682F41;
+  --primary-ink:    #FFF6F1;
+  --rose:           #C77E92;   /* dusty rose — accent / links */
+  --rose-hover:     #B96A80;
+  --rose-soft:      #F3DCE2;
+  --peach:          #EAC9B2;
+  --peach-soft:     #F7E7DA;
+
+  /* Semantic (muted, warm-leaning) */
+  --success:    #527648;  --success-bg: #E7F0E3;  --success-line: #CFE0C7;
+  --warning:    #9C7430;  --warning-bg: #F8EAD4;  --warning-line: #ECD3A8;
+  --error:      #AF5A52;  --error-bg:   #F7E2DC;  --error-line:   #EAC6BD;
+  --info:       #7E6189;  --info-bg:    #F1E7F1;  --info-line:    #E0CFE2;
+
+  /* Radius (scaled by --r at runtime via tweaks) */
+  --r: 1;
+  --radius-xl: calc(28px * var(--r));
+  --radius-lg: calc(22px * var(--r));
+  --radius-md: calc(16px * var(--r));
+  --radius-sm: calc(12px * var(--r));
+  --radius-pill: 999px;
+
+  /* Elevation (soft, warm-tinted — no glow) */
+  --shadow-sm:   0 1px 2px rgba(122,59,78,0.06);
+  --shadow-card: 0 12px 32px rgba(122,59,78,0.07);
+  --shadow-pop:  0 18px 44px rgba(122,59,78,0.14);
+  --shadow-btn:  0 6px 16px rgba(122,59,78,0.20);
+
+  /* Type */
+  --font: var(--font-hanken-grotesk), "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  --mono: var(--font-spline-sans-mono), "Spline Sans Mono", ui-monospace, "SF Mono", monospace;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Clerk injects some component-specific styles after Tailwind classes. Keep the
-   embedded auth UI readable on SignalGen's dark dashboard and modal backdrop. */
+/* ---- Eyebrow / section label ---- */
+.sg-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rose);
+}
+.sg-eyebrow--soft { color: var(--ink-soft); }
+
+/* ---- Buttons ---- */
+.sg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 13px 24px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .12s ease, box-shadow .18s ease;
+  text-decoration: none;
+}
+.sg-btn:active { transform: translateY(1px); }
+.sg-btn:focus-visible { outline: 3px solid var(--rose-soft); outline-offset: 2px; }
+.sg-btn:disabled, .sg-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+.sg-btn--primary { background: var(--primary); color: var(--primary-ink); box-shadow: var(--shadow-btn); }
+.sg-btn--primary:hover:not(:disabled) { background: var(--primary-hover); }
+
+.sg-btn--rose { background: var(--rose); color: #fff; box-shadow: var(--shadow-btn); }
+.sg-btn--rose:hover:not(:disabled) { background: var(--rose-hover); }
+
+.sg-btn--secondary {
+  background: transparent; color: var(--primary);
+  border: 1.5px solid var(--line-strong);
+}
+.sg-btn--secondary:hover:not(:disabled) { border-color: var(--rose); color: var(--rose-hover); background: var(--rose-soft); }
+
+.sg-btn--soft { background: var(--panel); color: var(--primary); }
+.sg-btn--soft:hover:not(:disabled) { background: var(--rose-soft); }
+
+.sg-btn--success { background: var(--success); color: #fff; box-shadow: var(--shadow-btn); }
+.sg-btn--success:hover:not(:disabled) { filter: brightness(1.06); }
+
+.sg-btn--danger { background: transparent; color: var(--error); border: 1.5px solid var(--error-line); }
+.sg-btn--danger:hover:not(:disabled) { background: var(--error-bg); }
+
+.sg-btn--sm { padding: 9px 16px; font-size: 13px; }
+.sg-btn--lg { padding: 16px 30px; font-size: 16px; }
+
+/* ---- Cards & panels ---- */
+.sg-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+.sg-panel {
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+}
+.sg-panel--cream { background: var(--bg-alt); }
+.sg-panel--peach { background: var(--panel-2); }
+
+/* ---- Pills / badges ---- */
+.sg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 6px 13px;
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--primary);
+  white-space: nowrap;
+}
+.sg-pill--success { background: var(--success-bg); color: var(--success); }
+.sg-pill--warning { background: var(--warning-bg); color: var(--warning); }
+.sg-pill--error   { background: var(--error-bg);   color: var(--error); }
+.sg-pill--info    { background: var(--info-bg);    color: var(--info); }
+.sg-pill--rose    { background: var(--rose-soft);  color: var(--rose-hover); }
+.sg-pill--outline { background: transparent; border: 1px solid var(--line-strong); color: var(--ink-soft); }
+.sg-pill .sg-dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+
+/* ---- Inputs ---- */
+.sg-input, .sg-textarea {
+  width: 100%;
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--bg-alt);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 13px 16px;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.sg-textarea { resize: vertical; line-height: 1.55; }
+.sg-input::placeholder, .sg-textarea::placeholder { color: var(--ink-faint); }
+.sg-input:focus, .sg-textarea:focus {
+  outline: none;
+  background: #fff;
+  border-color: var(--rose);
+  box-shadow: 0 0 0 4px var(--rose-soft);
+}
+
+/* ---- Tabs (segmented) ---- */
+.sg-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 5px;
+  background: var(--panel);
+  border-radius: var(--radius-pill);
+}
+.sg-tab {
+  font-family: var(--font);
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.sg-tab:hover { color: var(--primary); }
+.sg-tab[aria-selected="true"] {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- Meta / mono text ---- */
+.sg-meta { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.sg-mono { font-family: var(--mono); }
+
+/* ---- Misc ---- */
+.sg-divider { height: 1px; background: var(--line); border: 0; margin: 0; }
+.sg-link {
+  color: var(--rose-hover); font-weight: 600; text-decoration: none;
+  transition: color .15s ease;
+}
+.sg-link:hover { color: var(--primary); }
+
+/* scrollbars */
+.sg-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.sg-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 999px; border: 3px solid var(--bg); }
+.sg-scroll::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* subtle entrance for drawer / panels */
+@keyframes sgSlideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes sgFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sgSpin { to { transform: rotate(360deg); } }
+.sg-spin { animation: sgSpin .8s linear infinite; }
+
+
+/* Clerk injects component-specific styles after Tailwind classes. Keep the
+   embedded auth UI readable on SignalGen's light Soft Studio surfaces. */
 .cl-card,
 .cl-modalContent,
 .cl-organizationSwitcherPopoverCard,
 .cl-userButtonPopoverCard {
-  color: #f8fafc !important;
+  background: var(--card) !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+  box-shadow: var(--shadow-pop) !important;
 }
 
 .cl-headerTitle,
@@ -40,7 +262,7 @@ body {
 .cl-socialButtonsBlockButtonText,
 .cl-organizationSwitcherPopoverActionButtonText,
 .cl-userButtonPopoverActionButtonText {
-  color: #f8fafc !important;
+  color: var(--ink) !important;
 }
 
 .cl-headerSubtitle,
@@ -48,23 +270,29 @@ body {
 .cl-footerActionText,
 .cl-organizationPreviewSecondaryIdentifier,
 .cl-userPreviewSecondaryIdentifier {
-  color: #cbd5e1 !important;
+  color: var(--ink-soft) !important;
 }
 
 .cl-dividerText,
 .cl-footerPagesLink,
 .cl-modalCloseButton,
 .cl-organizationSwitcherTriggerIcon {
-  color: #94a3b8 !important;
+  color: var(--ink-faint) !important;
 }
 
 .cl-formFieldInput {
-  background: #f8fafc !important;
-  color: #0f172a !important;
+  background: var(--bg-alt) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
 }
 
 .cl-formFieldInput::placeholder {
-  color: #64748b !important;
+  color: var(--ink-faint) !important;
+}
+
+.cl-formFieldInput:focus {
+  border-color: var(--rose) !important;
+  box-shadow: 0 0 0 4px var(--rose-soft) !important;
 }
 
 .cl-organizationSwitcherTrigger {

@@ -47,3 +47,6 @@ next-env.d.ts
 
 # Local Claude Code settings and cache
 .claude/
+# Local redesign handoff artifacts
+/SignalGen2-redesign/
+/redesign-handoff.md
