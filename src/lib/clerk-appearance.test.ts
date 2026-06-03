@@ -23,8 +23,8 @@ describe("SignalGen Clerk appearance", () => {
 
     expect(globals).toContain(".cl-organizationPreviewMainIdentifier");
     expect(globals).toContain(".cl-socialButtonsBlockButtonText");
-    expect(globals).toContain("color: #f8fafc !important");
+    expect(globals).toContain("color:var(--ink) !important");
     expect(globals).toContain(".cl-formFieldInput");
-    expect(globals).toContain("color: #0f172a !important");
+    expect(globals).toContain("background:var(--inset) !important");
   });
 });
