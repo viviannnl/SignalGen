@@ -2,9 +2,14 @@
 
 import { useEffect } from "react";
 
-type SignalGenTheme = "light" | "dark";
-type SignalGenDensity = "compact" | "regular" | "comfy";
-type SignalGenAccent = [string, string];
+export type SignalGenTheme = "light" | "dark";
+export type SignalGenDensity = "compact" | "regular" | "comfy";
+export type SignalGenAccent = [string, string];
+export type SignalGenThemeSettings = {
+  theme: SignalGenTheme;
+  density: SignalGenDensity;
+  accent: SignalGenAccent | null;
+};
 
 declare global {
   interface Window {
@@ -16,11 +21,18 @@ declare global {
   }
 }
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   theme: "signalgen:theme",
   density: "signalgen:density",
   accent: "signalgen:accent",
 } as const;
+
+export const ACCENTS: SignalGenAccent[] = [
+  ["#FF6B3D", "#F2A93B"],
+  ["#E5557E", "#FF8FA8"],
+  ["#E8961F", "#F2C94C"],
+  ["#C24DD6", "#F2622E"],
+];
 
 const DEFAULT_THEME: SignalGenTheme = "light";
 const DEFAULT_DENSITY: SignalGenDensity = "regular";
@@ -56,7 +68,7 @@ function parseAccent(value: string | null): SignalGenAccent | null {
   return null;
 }
 
-function applyThemeSettings({
+export function applyThemeSettings({
   theme = DEFAULT_THEME,
   density = DEFAULT_DENSITY,
   accent,
@@ -83,16 +95,42 @@ function applyThemeSettings({
   }
 }
 
-function readStoredSettings() {
-  const theme = localStorage.getItem(STORAGE_KEYS.theme);
-  const density = localStorage.getItem(STORAGE_KEYS.density);
-  const accent = localStorage.getItem(STORAGE_KEYS.accent);
+export function readStoredSettings(): SignalGenThemeSettings {
+  if (typeof window === "undefined") {
+    return { theme: DEFAULT_THEME, density: DEFAULT_DENSITY, accent: null };
+  }
 
-  return {
-    theme: isTheme(theme) ? theme : DEFAULT_THEME,
-    density: isDensity(density) ? density : DEFAULT_DENSITY,
-    accent: parseAccent(accent),
-  };
+  try {
+    const theme = localStorage.getItem(STORAGE_KEYS.theme);
+    const density = localStorage.getItem(STORAGE_KEYS.density);
+    const accent = localStorage.getItem(STORAGE_KEYS.accent);
+
+    return {
+      theme: isTheme(theme) ? theme : DEFAULT_THEME,
+      density: isDensity(density) ? density : DEFAULT_DENSITY,
+      accent: parseAccent(accent),
+    };
+  } catch {
+    return { theme: DEFAULT_THEME, density: DEFAULT_DENSITY, accent: null };
+  }
+}
+
+export function persistThemeSettings({ theme, density, accent }: SignalGenThemeSettings) {
+  if (typeof window === "undefined") return;
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.theme, theme);
+    localStorage.setItem(STORAGE_KEYS.density, density);
+    if (accent) {
+      localStorage.setItem(STORAGE_KEYS.accent, JSON.stringify(accent));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.accent);
+    }
+  } catch {
+    // Keep live DOM updates working even if this browser blocks localStorage.
+  }
+
+  window.dispatchEvent(new CustomEvent("signalgen:themechange", { detail: { theme, density, accent } }));
 }
 
 export function ThemeAttributeSetter() {
@@ -109,13 +147,7 @@ export function ThemeAttributeSetter() {
       const accent = next.accent === undefined ? current.accent : next.accent;
 
       applyThemeSettings({ theme, density, accent });
-      localStorage.setItem(STORAGE_KEYS.theme, theme);
-      localStorage.setItem(STORAGE_KEYS.density, density);
-      if (accent) {
-        localStorage.setItem(STORAGE_KEYS.accent, JSON.stringify(accent));
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.accent);
-      }
+      persistThemeSettings({ theme, density, accent });
     }
 
     applyThemeSettings(readStoredSettings());

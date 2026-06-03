@@ -3,6 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 
+import { ThemeMenu } from "@/components/theme-menu";
+
 import {
   Card,
   Evidence,
@@ -106,6 +108,7 @@ function TopBar() {
       <div className="mx-auto flex max-w-[1200px] items-center justify-between gap-4 px-5 py-4 sm:px-8">
         <Logo />
         <div className="flex flex-wrap items-center justify-end gap-3">
+          <ThemeMenu />
           <a className="sg-btn sg-btn--ghost sg-btn--sm" href="https://github.com/viviannnl/SignalGen">
             GitHub
           </a>

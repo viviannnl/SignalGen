@@ -49,7 +49,8 @@ export type IconName =
   | "x"
   | "clock"
   | "layers"
-  | "bolt";
+  | "bolt"
+  | "sliders";
 
 export function Icon({ name, size = 18, stroke = 2, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -68,6 +69,7 @@ export function Icon({ name, size = 18, stroke = 2, className }: { name: IconNam
     clock: <path d="M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z" />,
     layers: <path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17l9 5 9-5" />,
     bolt: <path d="M13 3L4 14h7l-1 7 9-11h-7z" />,
+    sliders: <path d="M4 7h7M15 7h5M11 7a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM4 17h5M13 17h7M9 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0z" />,
   };
 
   return (

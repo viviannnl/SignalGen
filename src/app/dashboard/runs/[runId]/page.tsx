@@ -21,6 +21,7 @@ import {
   Textarea,
   stageIndex,
 } from "@/components/ui";
+import { ThemeMenu } from "@/components/theme-menu";
 import { hasUsableClerkPublishableKey } from "@/lib/clerk-env";
 import type { EvidenceItem, FounderDecisionAction, SignalDecision, SignalGenRun, SignalGenRunStatus, SignalSeverity, SignalType } from "@/lib/types";
 
@@ -452,9 +453,12 @@ function RunDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }: {
   return (
     <main className="sg-grid-bg min-h-screen" style={{ background: "var(--bg)", color: "var(--ink)", padding: "28px clamp(16px,4vw,32px) 96px" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 20, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700 }}>
-          <Icon name="arrowL" size={16} /> Back to signals
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
+          <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700 }}>
+            <Icon name="arrowL" size={16} /> Back to signals
+          </Link>
+          <ThemeMenu />
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-9">
           <aside className="lg:sticky lg:top-5 lg:self-start">
@@ -751,9 +755,12 @@ function ShellState({ dashboardHref, title, body, tone = "info" }: { dashboardHr
   return (
     <main className="sg-grid-bg min-h-screen" style={{ background: "var(--bg)", color: "var(--ink)", padding: "28px clamp(16px,4vw,32px) 96px" }}>
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
-        <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 20, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700 }}>
-          <Icon name="arrowL" size={16} /> Back to signals
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
+          <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700 }}>
+            <Icon name="arrowL" size={16} /> Back to signals
+          </Link>
+          <ThemeMenu />
+        </div>
         <Card role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} aria-busy={title.startsWith("Loading") ? true : undefined} style={{ padding: "var(--pad-card)", borderColor: tone === "error" ? "var(--error-line)" : tone === "warning" ? "var(--warning-line)" : "var(--line)" }}>
           <Pill variant={tone === "error" ? "error" : tone === "warning" ? "warning" : "info"} dot>{tone}</Pill>
           <h1 className="sg-display" style={{ fontSize: "clamp(28px,3.4vw,42px)", margin: "16px 0 8px" }}>{title}</h1>
@@ -768,9 +775,12 @@ function SignedOutState({ dashboardHref, onSignIn }: { dashboardHref: string; on
   return (
     <main className="sg-grid-bg min-h-screen" style={{ background: "var(--bg)", color: "var(--ink)", padding: "28px clamp(16px,4vw,32px) 96px" }}>
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
-        <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 20, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700 }}>
-          <Icon name="arrowL" size={16} /> Back to signals
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 20 }}>
+          <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--sans)", fontSize: 14, fontWeight: 700 }}>
+            <Icon name="arrowL" size={16} /> Back to signals
+          </Link>
+          <ThemeMenu />
+        </div>
         <Card role="status" aria-live="polite" style={{ padding: "var(--pad-card)", borderColor: "var(--warning-line)" }}>
           <Pill variant="warning" dot>auth</Pill>
           <h1 className="sg-display" style={{ fontSize: "clamp(28px,3.4vw,42px)", margin: "16px 0 8px" }}>Sign in to view this run</h1>

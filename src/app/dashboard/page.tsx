@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthControls } from "../auth-controls";
+import { ThemeMenu } from "@/components/theme-menu";
 import {
   Button,
   Card,
@@ -657,9 +658,12 @@ function DashboardHeader({ selectedRepo, onRefresh }: { selectedRepo?: RepoConne
               : "Choose one connected repo before creating signals, sessions, or PR work."}
           </p>
         </div>
-        <Button variant="ghost" onClick={onRefresh} leftIcon={<Icon name="refresh" size={16} />}>
-          Refresh
-        </Button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <ThemeMenu />
+          <Button variant="ghost" onClick={onRefresh} leftIcon={<Icon name="refresh" size={16} />}>
+            Refresh
+          </Button>
+        </div>
       </div>
     </header>
   );
