@@ -509,7 +509,7 @@ export default function DashboardPage() {
         </Tabs>
 
         {error ? (
-          <Panel role="alert" style={{ borderColor: "var(--error)", background: "rgba(248,113,113,.11)", color: "#fecaca", padding: 16 }}>
+          <Panel role="alert" style={{ borderColor: "var(--error-line)", background: "var(--error-bg)", color: "var(--error)", padding: 16 }}>
             {error}
           </Panel>
         ) : null}
@@ -1087,7 +1087,7 @@ function GitHubPanel({
   }
 
   if (githubStatus.status === "error") {
-    return <Panel role="alert" style={{ borderColor: "var(--error)", color: "#fecaca", padding: 18 }}>{githubStatus.message}</Panel>;
+    return <Panel role="alert" style={{ borderColor: "var(--error-line)", background: "var(--error-bg)", color: "var(--error)", padding: 18 }}>{githubStatus.message}</Panel>;
   }
 
   if (githubStatus.status === "disconnected") {
@@ -1127,7 +1127,7 @@ function GitHubPanel({
             <Button type="submit" variant="signal" disabled={isSubmitting || owner.trim() === "" || repo.trim() === "" || defaultBranch.trim() === ""} loading={isSubmitting}>
               {isSubmitting ? "Connecting repo..." : "Connect repository"}
             </Button>
-            {submitError ? <p style={{ marginTop: 12, color: "#fecaca", fontSize: 14 }}>{submitError}</p> : null}
+            {submitError ? <p style={{ marginTop: 12, color: "var(--error)", fontSize: 14 }}>{submitError}</p> : null}
           </div>
         </form>
       </Card>
@@ -1219,27 +1219,27 @@ function SignalDetailDrawer({
   const decision = plan?.approvalDecision;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-sm" aria-label="Signal detail overlay">
+    <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)" }} aria-label="Signal detail overlay">
       <button type="button" aria-label="Close signal detail backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
       <aside
         role="dialog"
         aria-modal="true"
         aria-labelledby="signal-detail-title"
-        className="relative h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-[#080b12] p-6 text-white shadow-2xl shadow-cyan-950/40 sm:p-8"
+        className="relative h-full w-full max-w-2xl overflow-y-auto border-l p-6 sm:p-8" style={{ background: "var(--panel)", color: "var(--ink)", borderColor: "var(--line)", boxShadow: "var(--shadow-pop)" }}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">Signal detail</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em]" style={{ color: "var(--signal)" }}>Signal detail</p>
             <h2 id="signal-detail-title" className="mt-3 text-3xl font-semibold tracking-tight">
               {signal.title || "Untitled signal"}
             </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-300">{signal.summary || "Signal summary is not available yet."}</p>
+            <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>{signal.summary || "Signal summary is not available yet."}</p>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="rounded-full border border-white/10 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-cyan-200/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+            className="rounded-full border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2" style={{ borderColor: "var(--line)", color: "var(--ink)", background: "var(--panel-2)", boxShadow: "0 0 0 0 var(--signal-soft)" }}
           >
             Close
           </button>
@@ -1255,20 +1255,20 @@ function SignalDetailDrawer({
           <SignalDetailMetric label="Created" value={formatSignalDate(signal.createdAt)} />
         </div>
 
-        <section className="mt-8 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Evidence</p>
+        <section className="mt-8 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Evidence</p>
           {evidenceItems.length > 0 ? (
             <div className="mt-4 space-y-4">
               {evidenceItems.map((item) => (
-                <article key={item.id} className="rounded-2xl bg-slate-950/70 p-4">
+                <article key={item.id} className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
                   <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-200">{formatSignalLabel(item.clusterType)}</span>
-                    <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-slate-300">Severity: {formatSignalLabel(item.severity)}</span>
-                    <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-slate-300">Decision: {formatSignalLabel(item.decision)}</span>
+                    <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "var(--signal-soft)", color: "var(--signal)" }}>{formatSignalLabel(item.clusterType)}</span>
+                    <span className="rounded-full px-3 py-1 text-xs" style={{ background: "var(--panel-3)", color: "var(--ink-soft)" }}>Severity: {formatSignalLabel(item.severity)}</span>
+                    <span className="rounded-full px-3 py-1 text-xs" style={{ background: "var(--panel-3)", color: "var(--ink-soft)" }}>Decision: {formatSignalLabel(item.decision)}</span>
                   </div>
                   <h3 className="mt-4 text-lg font-semibold">{item.title || "Evidence item"}</h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{item.summary || "No evidence summary saved yet."}</p>
-                  <dl className="mt-4 grid gap-3 text-xs text-slate-400 sm:grid-cols-3">
+                  <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>{item.summary || "No evidence summary saved yet."}</p>
+                  <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-3" style={{ color: "var(--ink-faint)" }}>
                     <SignalDetailInlineMetric label="Frequency" value={String(item.frequency ?? 0)} />
                     <SignalDetailInlineMetric label="Confidence" value={formatSignalPercent(item.confidence)} />
                     <SignalDetailInlineMetric label="Source run" value={item.runId || "Not linked"} />
@@ -1277,18 +1277,18 @@ function SignalDetailDrawer({
               ))}
             </div>
           ) : evidenceReferenceCount > 0 ? (
-            <div className="mt-4 rounded-2xl bg-slate-950/70 p-4 text-sm leading-6 text-slate-300">
+            <div className="mt-4 rounded-2xl p-4 text-sm leading-6" style={{ background: "var(--inset)", color: "var(--ink-soft)" }}>
               <p>Evidence references saved, but detailed evidence text is not available in this view yet.</p>
-              <p className="mt-2 text-xs text-slate-500">References: {evidenceItemIds.join(", ")}</p>
+              <p className="mt-2 text-xs" style={{ color: "var(--ink-faint)" }}>References: {evidenceItemIds.join(", ")}</p>
             </div>
           ) : (
-            <p className="mt-4 rounded-2xl bg-slate-950/70 p-4 text-sm text-slate-400">No evidence has been saved for this signal yet.</p>
+            <p className="mt-4 rounded-2xl p-4 text-sm" style={{ background: "var(--inset)", color: "var(--ink-faint)" }}>No evidence has been saved for this signal yet.</p>
           )}
         </section>
 
-        <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Recommended next step</p>
-          <p className="mt-3 text-sm leading-6 text-slate-200">
+        <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Recommended next step</p>
+          <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink)" }}>
             {plan?.recommendedChange ?? "Signal is still collecting evidence before a next step is proposed."}
           </p>
           {plan ? (
@@ -1300,22 +1300,22 @@ function SignalDetailDrawer({
           ) : null}
         </section>
 
-        <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Decision memory</p>
+        <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Decision memory</p>
           {decision ? (
-            <div className="mt-3 text-sm leading-6 text-slate-200">
+            <div className="mt-3 text-sm leading-6" style={{ color: "var(--ink)" }}>
               <p>Founder {decision.action === "approve" ? "approved" : "rejected"} this plan on {formatSignalDate(decision.decidedAt)}.</p>
-              {decision.note ? <p className="mt-2 text-slate-300">“{decision.note}”</p> : null}
+              {decision.note ? <p className="mt-2" style={{ color: "var(--ink-soft)" }}>“{decision.note}”</p> : null}
             </div>
           ) : (
-            <p className="mt-3 text-sm leading-6 text-slate-400">No founder decision has been recorded for this signal yet.</p>
+            <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink-faint)" }}>No founder decision has been recorded for this signal yet.</p>
           )}
         </section>
 
         {otherSignals.length > 0 ? (
-          <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Other signals</p>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
+          <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Other signals</p>
+            <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-faint)" }}>
               Select another saved signal without leaving this detail drawer.
             </p>
             <div className="mt-4 space-y-2">
@@ -1324,10 +1324,10 @@ function SignalDetailDrawer({
                   key={otherSignal._id}
                   type="button"
                   onClick={() => onSelectSignal(otherSignal._id)}
-                  className="w-full rounded-2xl bg-slate-950/70 p-3 text-left text-sm text-slate-200 transition hover:bg-cyan-300/10 focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+                  className="w-full rounded-2xl p-3 text-left text-sm transition focus:outline-none focus-visible:ring-2" style={{ background: "var(--inset)", color: "var(--ink)", border: "1px solid var(--line)", outlineColor: "var(--signal)" }}
                 >
                   <span className="font-semibold">{otherSignal.title || "Untitled signal"}</span>
-                  <span className="mt-1 block text-xs text-slate-400">
+                  <span className="mt-1 block text-xs" style={{ color: "var(--ink-faint)" }}>
                     {formatSignalLabel(otherSignal.status)} · {formatSignalDate(otherSignal.updatedAt)}
                   </span>
                 </button>
@@ -1351,7 +1351,7 @@ function FounderDecisionPanel({
 }) {
   if (run.founderDecision) {
     return (
-      <Panel style={{ borderColor: "var(--success-line)", background: "rgba(74,222,128,.10)", padding: 18 }}>
+      <Panel style={{ borderColor: "var(--success-line)", background: "var(--success-bg)", padding: 18 }}>
         <Eyebrow>Founder decision</Eyebrow>
         <p style={{ margin: "10px 0 0", fontSize: 18, fontWeight: 800 }}>{run.founderDecision.action === "approve" ? "Approved" : "Rejected"}</p>
         <p style={{ margin: "6px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>{new Date(run.founderDecision.decidedAt).toLocaleString()}</p>
@@ -1374,7 +1374,7 @@ function FounderDecisionPanel({
   const isDeciding = decidingRunId === run._id;
 
   return (
-    <Panel style={{ borderColor: "rgba(251,191,36,.35)", background: "rgba(251,191,36,.10)", padding: 18 }}>
+    <Panel style={{ borderColor: "var(--warning-line)", background: "var(--warning-bg)", padding: 18 }}>
       <Eyebrow>Founder approval required</Eyebrow>
       <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>
         SignalGen found enough evidence to propose a plan. Approving only records your decision for the next PR step; it does not edit code yet.
@@ -1463,9 +1463,9 @@ function InfoGrid({ title, items }: { title: string; items: string[] }) {
 
 function SignalDetailMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-950/70 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
-      <p className="mt-2 break-words text-sm font-semibold text-slate-100">{value}</p>
+    <div className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--ink-faint)" }}>{label}</p>
+      <p className="mt-2 break-words text-sm font-semibold" style={{ color: "var(--ink)" }}>{value}</p>
     </div>
   );
 }
@@ -1473,18 +1473,18 @@ function SignalDetailMetric({ label, value }: { label: string; value: string }) 
 function SignalDetailInlineMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-1 break-words text-slate-300">{value}</p>
+      <p className="font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--ink-faint)" }}>{label}</p>
+      <p className="mt-1 break-words" style={{ color: "var(--ink-soft)" }}>{value}</p>
     </div>
   );
 }
 
 function SignalDetailList({ title, items = [] }: { title: string; items?: string[] }) {
   return (
-    <div className="rounded-2xl bg-slate-950/70 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">{title}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
-        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li className="text-slate-500">No items saved yet.</li>}
+    <div className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--signal)" }}>{title}</p>
+      <ul className="mt-3 space-y-2 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>
+        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li style={{ color: "var(--ink-faint)" }}>No items saved yet.</li>}
       </ul>
     </div>
   );
