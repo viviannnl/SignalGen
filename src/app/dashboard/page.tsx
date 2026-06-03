@@ -2,9 +2,29 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthControls } from "../auth-controls";
+import {
+  Button,
+  Card,
+  Evidence,
+  Eyebrow,
+  Field,
+  Gauge,
+  Icon,
+  Input,
+  LoopMap,
+  MetricTile,
+  Panel,
+  Pill,
+  PipelineStrip,
+  SG_STAGES,
+  Tab,
+  Tabs,
+  Textarea,
+  stageIndex,
+} from "@/components/ui";
 import type { ProductSignal, RepoConnection, SignalGenRun, SignalPlan } from "@/lib/types";
 
 type ApiRun = SignalGenRun & { _id: string };
@@ -16,6 +36,37 @@ type GitHubStatus =
   | { status: "disconnected" }
   | { status: "installed"; installationId: string }
   | { status: "connected"; installationId: string; repoConnection: RepoConnection; repoConnections?: RepoConnection[] };
+
+type SignalFilter = "all" | "feature_request" | "friction" | "bug" | "trust_objection" | "pricing" | "praise" | "noise";
+
+const DASHBOARD_TABS: Array<{ id: DashboardTab; label: string }> = [
+  { id: "new-analysis", label: "New analysis" },
+  { id: "all-signals", label: "All signals" },
+  { id: "github", label: "GitHub" },
+];
+
+const SIGNAL_FILTERS: Array<{ id: SignalFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "feature_request", label: "Feature" },
+  { id: "friction", label: "Friction" },
+  { id: "bug", label: "Bug" },
+  { id: "trust_objection", label: "Trust" },
+  { id: "pricing", label: "Pricing" },
+  { id: "praise", label: "Praise" },
+  { id: "noise", label: "Noise" },
+];
+
+const MAX_SCREENSHOT_FILES = 5;
+const MAX_SCREENSHOT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_SCREENSHOT_TOTAL_BYTES = 8 * 1024 * 1024;
+const ACCEPTED_SCREENSHOT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+const PROCESSING_COMMENTS = [
+  "Extracting screenshot text and comments…",
+  "Clustering repeated product pain…",
+  "Drafting founder-safe plan guardrails…",
+  "Saving repo-scoped signal memory…",
+];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -34,6 +85,8 @@ export default function DashboardPage() {
   const [githubStatus, setGithubStatus] = useState<GitHubStatus>({ status: "loading" });
   const [selectedRepoConnectionId, setSelectedRepoConnectionId] = useState("");
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
+  const [signalQuery, setSignalQuery] = useState("");
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>("all");
 
   const connectedRepos = useMemo(() => {
     if (githubStatus.status !== "connected") return [];
@@ -45,6 +98,45 @@ export default function DashboardPage() {
   const selectedSignal = useMemo(
     () => signals.find((signal) => signal._id === selectedSignalId) ?? null,
     [selectedSignalId, signals],
+  );
+  const latestRun = runs[0];
+  const fileNames = useMemo(() => files.map((file) => file.name), [files]);
+  const filteredSignals = useMemo(() => {
+    const normalizedQuery = signalQuery.trim().toLowerCase();
+    return signals.filter((signal) => {
+      const matchesFilter = signalFilter === "all" || signal.type === signalFilter;
+      const haystack = [signal.title, signal.summary, signal.status, signal.currentPlan?.recommendedChange]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return matchesFilter && (normalizedQuery === "" || haystack.includes(normalizedQuery));
+    });
+  }, [signalFilter, signalQuery, signals]);
+
+  const replaceDashboardUrl = useCallback(
+    (next: { repoConnectionId?: string; tab?: DashboardTab }) => {
+      if (typeof window === "undefined") return;
+      const params = new URLSearchParams(window.location.search);
+      const repoConnectionId = next.repoConnectionId ?? (selectedRepoConnectionId || params.get("repoConnectionId") || "");
+      const tab = next.tab ?? activeTab;
+      if (repoConnectionId) {
+        params.set("repoConnectionId", repoConnectionId);
+      } else {
+        params.delete("repoConnectionId");
+      }
+      params.set("tab", tab);
+      const query = params.toString();
+      router.replace(query ? `/dashboard?${query}` : "/dashboard", { scroll: false });
+    },
+    [activeTab, router, selectedRepoConnectionId],
+  );
+
+  const setDashboardTab = useCallback(
+    (tab: DashboardTab) => {
+      setActiveTab(tab);
+      replaceDashboardUrl({ tab });
+    },
+    [replaceDashboardUrl],
   );
 
   const loadSignals = useCallback(async (repoConnectionId: string) => {
@@ -108,8 +200,12 @@ export default function DashboardPage() {
     [loadSignals, selectedRepoConnectionId],
   );
 
-  const latestRun = runs[0];
-  const fileNames = useMemo(() => files.map((file) => file.name), [files]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setActiveTab(initialDashboardTab());
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   useEffect(() => {
     if (!selectedSignal) return;
@@ -355,7 +451,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (githubStatus.status !== "connected") return;
-    const repoFromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("repoConnectionId") ?? "" : "";
+    const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const repoFromUrl = searchParams.get("repoConnectionId") ?? "";
     const savedRepo = typeof window !== "undefined" ? window.localStorage.getItem("signalgen:selectedRepoConnectionId") ?? "" : "";
     const candidate = repoFromUrl || savedRepo;
     if (candidate && connectedRepos.some((connection) => connection._id === candidate)) {
@@ -374,296 +471,150 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timeoutId);
   }, [loadRuns, selectedRepoConnectionId]);
 
+  const latestSignalEvidence = latestRun?.evidenceItems?.slice(0, 2) ?? [];
+  const processingStage = isProcessing ? 2 : isCreating ? 1 : latestRun ? stageIndex(latestRun.status) : 0;
+
   return (
-    <main className="min-h-screen bg-[#080b12] px-6 py-8 text-white sm:px-8 lg:px-10">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8">
-        <nav className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <Link href="/" className="text-sm text-cyan-200 hover:text-cyan-100">
-              ← SignalGen home
-            </Link>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight">Founder signal dashboard</h1>
-            <p className="mt-2 max-w-2xl text-slate-300">
-              {selectedRepo ? `Current repo: ${selectedRepo.owner}/${selectedRepo.repo}` : "Choose one connected repo before creating signals, sessions, or PR work."}
-            </p>
-          </div>
-          <button
-            onClick={() => void loadRuns()}
-            className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white transition hover:border-cyan-300 hover:text-cyan-100"
-          >
-            Refresh
-          </button>
-        </nav>
+    <main className="sg-page-bg" style={{ minHeight: "100vh", padding: "28px clamp(16px,4vw,42px) 48px", color: "var(--ink)" }}>
+      <style>{`
+        @media (max-width: 920px) {
+          .dashboard-two-col,
+          .github-connect-grid,
+          .github-repo-grid { grid-template-columns: 1fr !important; }
+          .dashboard-metric-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 640px) {
+          .signal-row-meta { align-items: flex-start !important; }
+          .sg-row { align-items: flex-start !important; flex-direction: column !important; }
+        }
+      `}</style>
+      <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}>
+        <DashboardHeader selectedRepo={selectedRepo} onRefresh={() => void loadRuns()} />
 
         <AuthControls />
 
-        <div className="flex gap-1 self-start rounded-full border border-white/10 bg-white/[0.04] p-1" role="tablist" aria-label="Dashboard sections">
-          <button
-            id="new-analysis-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "new-analysis"}
-            aria-controls="new-analysis-panel"
-            onClick={() => setActiveTab("new-analysis")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              activeTab === "new-analysis" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            New analysis
-          </button>
-          <button
-            id="all-signals-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "all-signals"}
-            aria-controls="all-signals-panel"
-            onClick={() => setActiveTab("all-signals")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              activeTab === "all-signals" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            All signals
-          </button>
-          <button
-            id="github-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "github"}
-            aria-controls="github-panel"
-            onClick={() => setActiveTab("github")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              activeTab === "github" ? "bg-cyan-300 text-slate-950" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            GitHub
-          </button>
-        </div>
+        <Tabs aria-label="Dashboard sections" style={{ alignSelf: "flex-start", maxWidth: "100%", overflowX: "auto" }}>
+          {DASHBOARD_TABS.map((tab) => (
+            <Tab
+              key={tab.id}
+              id={`${tab.id}-tab`}
+              selected={activeTab === tab.id}
+              aria-controls={`${tab.id}-panel`}
+              onClick={() => setDashboardTab(tab.id)}
+              style={{ whiteSpace: "nowrap" }}
+            >
+              {tab.label}
+            </Tab>
+          ))}
+        </Tabs>
 
         {error ? (
-          <div className="rounded-3xl border border-red-400/30 bg-red-400/10 p-4 text-red-100">{error}</div>
+          <Panel role="alert" style={{ borderColor: "var(--error)", background: "rgba(248,113,113,.11)", color: "#fecaca", padding: 16 }}>
+            {error}
+          </Panel>
         ) : null}
 
         {activeTab === "new-analysis" ? (
-          <section
-            id="new-analysis-panel"
-            role="tabpanel"
-            aria-labelledby="new-analysis-tab"
-            className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]"
-          >
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">New analysis</p>
-            <h2 className="mt-3 text-2xl font-semibold">Upload screenshots</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-300">
-              {selectedRepo
-                ? `This session is scoped to ${selectedRepo.owner}/${selectedRepo.repo}. Uploaded feedback, signal memory, plans, and implementation jobs stay under this repo.`
-                : "Choose a repo from the GitHub tab before uploading feedback. SignalGen will not create sessions or implementation work without an explicit repo."}
-            </p>
-
-            <label
-              className={`mt-6 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed p-6 text-center transition hover:border-cyan-200/60 hover:bg-cyan-300/10 ${
-                isDragging ? "border-cyan-200/80 bg-cyan-300/15" : "border-cyan-300/30 bg-cyan-300/5"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                const dropped = Array.from(e.dataTransfer.files);
-                setFiles(dropped.slice(0, 5));
-                if (dropped.length > 5) {
-                  setError("Please upload at most 5 screenshots per run. The first 5 were selected.");
-                }
-              }}
-            >
-              <span className="text-lg font-semibold">Drop or choose screenshots</span>
-              <span className="mt-2 text-sm text-slate-300">PNG, JPG, or WebP comment screenshots</span>
-              <span className="mt-2 text-xs text-slate-400">Max 5 screenshots · 4 MB each · 8 MB total</span>
-              <input
-                multiple
-                accept="image/png,image/jpeg,image/webp"
-                type="file"
-                className="sr-only"
-                onChange={(event) => {
-                  const selectedFiles = Array.from(event.target.files ?? []);
-                  setFiles(selectedFiles.slice(0, 5));
-                  if (selectedFiles.length > 5) {
-                    setError("Please upload at most 5 screenshots per run. The first 5 were selected.");
+          <section id="new-analysis-panel" role="tabpanel" aria-labelledby="new-analysis-tab" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <>
+              <LoopMap
+                stage={latestRun?.status ?? processingStage}
+                signalValue={selectedRepo ? Math.round((latestRun?.signal?.confidence ?? signals[0]?.confidence ?? 0) * 100) : 0}
+                runLabel={latestRun?._id ? `${selectedRepo?.repo ?? "Workspace"} · ${shortId(latestRun._id)}` : selectedRepo ? `${selectedRepo.repo} · ready` : "Choose a repo first"}
+                title={selectedRepo ? "Latest run · iteration loop" : "Iteration loop · choose a repo to activate"}
+                onNode={(key) => {
+                  if (!selectedRepo) {
+                    setDashboardTab("github");
+                    return;
+                  }
+                  if (key === "memory") {
+                    router.push(`/dashboard/memory?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`);
+                    return;
+                  }
+                  if (latestRun?._id) {
+                    router.push(`/dashboard/runs/${latestRun._id}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`);
                   }
                 }}
               />
-            </label>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                {selectedRepo ? (
+                  <Link className="sg-link" href={`/dashboard/memory?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`} style={{ fontSize: 13.5 }}>
+                    <Icon name="layers" size={14} /> Open full memory timeline <Icon name="arrow" size={14} />
+                  </Link>
+                ) : (
+                  <button className="sg-link" type="button" onClick={() => setDashboardTab("github")} style={{ fontSize: 13.5, background: "none", border: 0, fontFamily: "var(--sans)" }}>
+                    <Icon name="branch" size={14} /> Choose a repo first <Icon name="arrow" size={14} />
+                  </button>
+                )}
+              </div>
+              {!selectedRepo ? (
+                <EmptyRepoState
+                  title="Choose a repo first"
+                  body="SignalGen will not create sessions or implementation work without an explicit repo. Open the GitHub tab and choose a connected repository."
+                  action={<Button variant="ghost" size="sm" onClick={() => setDashboardTab("github")}>Open GitHub tab</Button>}
+                />
+              ) : null}
+            </>
 
-            <button
-              onClick={() => void createDemoRun()}
-              disabled={!selectedRepo || isCreating || isProcessing}
-              className="mt-3 text-xs text-cyan-300 underline hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Use sample feedback
-            </button>
-
-            <div>
-              <p className="mt-5 text-sm font-semibold text-white">Or paste feedback comments</p>
-              <textarea
-                value={pastedText}
-                onChange={(event) => setPastedText(event.target.value)}
-                placeholder="Paste one comment per line…"
-                rows={4}
-                className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
+            <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "minmax(0,0.9fr) minmax(0,1.1fr)", gap: 22 }}>
+              <UploadCard
+                selectedRepo={selectedRepo}
+                files={files}
+                fileNames={fileNames}
+                isDragging={isDragging}
+                isCreating={isCreating}
+                isProcessing={isProcessing}
+                pastedText={pastedText}
+                processingStage={processingStage}
+                onDraggingChange={setIsDragging}
+                onFiles={(nextFiles) => {
+                  const validation = validateDashboardScreenshotFiles(nextFiles);
+                  setFiles(validation.files);
+                  setError(validation.error);
+                }}
+                onCreateRun={() => void createRun()}
+                onCreateDemoRun={() => void createDemoRun()}
+                onPasteTextChange={setPastedText}
+                onCreatePasteRun={() => void createPasteRun()}
+                onGoGitHub={() => setDashboardTab("github")}
               />
-              <button
-                onClick={() => void createPasteRun()}
-                disabled={!selectedRepo || pastedText.trim() === "" || isCreating || isProcessing}
-                className="mt-3 rounded-full border border-cyan-300/40 px-4 py-2 text-xs font-semibold text-cyan-100 transition hover:border-cyan-200 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Analyze pasted feedback
-              </button>
-            </div>
-
-            {fileNames.length > 0 ? (
-              <div className="mt-5 rounded-2xl bg-slate-950/70 p-4">
-                <p className="text-sm font-semibold text-white">Selected screenshots</p>
-                <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                  {fileNames.map((name) => (
-                    <li key={name}>• {name}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <button
-              onClick={() => void createRun()}
-              disabled={!selectedRepo || isCreating || isProcessing || files.length === 0}
-              className="mt-6 w-full rounded-full bg-cyan-300 px-6 py-3 font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isProcessing ? "Agent is processing..." : isCreating ? "Extracting comments..." : "Upload and run agent"}
-            </button>
-          </div>
-
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">Latest signal</p>
-            {isLoading ? (
-              <p className="mt-5 text-slate-300">Loading signals...</p>
-            ) : latestRun ? (
-              <div className="mt-5 space-y-5">
-                <div className="flex flex-col gap-3 rounded-3xl bg-slate-950/70 p-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm text-slate-400">Top signal</p>
-                    <h2 className="mt-2 text-2xl font-semibold">{latestRun.signal?.title ?? "Pending analysis"}</h2>
-                    <p className="mt-3 text-sm leading-6 text-slate-300">{latestRun.signal?.summary ?? ""}</p>
-                  </div>
-                  <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-sm font-semibold text-emerald-300">
-                    {Math.round((latestRun.signal?.confidence ?? 0) * 100)}%
-                  </span>
-                </div>
-
-                {latestRun.extractionDiagnostics ? (
-                  <div className="rounded-2xl bg-slate-950/70 px-4 py-3 text-xs text-slate-400">
-                    Extracted from {latestRun.extractionDiagnostics.screenshotCount} screenshot{latestRun.extractionDiagnostics.screenshotCount !== 1 ? "s" : ""} · {latestRun.extractionDiagnostics.commentCount} comment{latestRun.extractionDiagnostics.commentCount !== 1 ? "s" : ""} found
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <InfoCard title="Extracted comments" items={latestRun.comments ?? []} />
-                  <InfoCard title="Evidence" items={latestRun.signal?.evidence ?? []} />
-                  <InfoCard title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
-                  <InfoCard title="Guardrails" items={latestRun.plan?.guardrails ?? []} />
-                  <InfoCard title="Files to change" items={latestRun.plan?.filesToChange ?? []} />
-                  <InfoCard title="Acceptance criteria" items={latestRun.plan?.acceptanceCriteria ?? []} />
-                </div>
-
-                <div className="rounded-3xl bg-slate-950/70 p-5">
-                  <p className="text-sm text-slate-400">Recommended product change</p>
-                  <p className="mt-2 text-slate-100">{latestRun.plan?.recommendedChange ?? "Awaiting agent analysis."}</p>
-                </div>
-
-                <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={decideRun} />
-                <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={runImplementationAction} />
-              </div>
-            ) : (
-              <p className="mt-5 text-slate-300">
-                {selectedRepo ? "No signals yet for this repo. Upload feedback to create your first repo-scoped signal." : "Choose a repo first. Each repo has its own saved signal session."}
-              </p>
-            )}
-          </div>
-        </section>
-        ) : null}
-
-        {activeTab === "all-signals" ? (
-          <section
-            id="all-signals-panel"
-            role="tabpanel"
-            aria-labelledby="all-signals-tab"
-            className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">All signals</p>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                  {selectedRepo
-                    ? `Signals, evidence, and decisions saved for ${selectedRepo.owner}/${selectedRepo.repo}.`
-                    : "Choose a repo first. Signal memory is separated per repository."}
-                </p>
-              </div>
-              <span className="rounded-full bg-white/[0.06] px-3 py-1 text-sm text-slate-300">{signals.length} signals</span>
-            </div>
-
-            <div className="mt-6 overflow-hidden rounded-3xl border border-white/10">
-              {signals.length > 0 ? (
-                <div className="divide-y divide-white/10">
-                  {signals.map((signal) => {
-                    const signalEvidenceItemIds = signal.evidenceItemIds ?? [];
-                    return (
-                      <button
-                        key={signal._id}
-                        type="button"
-                        onClick={() => setSelectedSignalId(signal._id)}
-                        className="grid w-full gap-3 bg-slate-950/50 p-4 text-left transition hover:bg-cyan-300/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-300/60 md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center"
-                      >
-                        <div>
-                          <p className="font-semibold">{signal.title}</p>
-                          <p className="mt-1 text-xs text-slate-400">
-                            {formatSignalLabel(signal.type)} · {signalEvidenceItemIds.length} evidence item{signalEvidenceItemIds.length !== 1 ? "s" : ""} · {formatSignalDate(signal.updatedAt)}
-                          </p>
-                          <p className="mt-2 text-sm leading-6 text-slate-300">{signal.summary}</p>
-                        </div>
-                        <p className="text-sm text-slate-300">
-                          {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
-                        </p>
-                        <div className="flex flex-col items-start gap-2 md:items-end">
-                          <span className="rounded-full bg-cyan-300/10 px-3 py-1 text-sm text-cyan-200">{formatSignalLabel(signal.status)}</span>
-                          <span className="text-xs text-slate-400">
-                            Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}
-                          </span>
-                          <span className="text-xs font-semibold text-cyan-200">View details →</span>
-                          {signal.currentPlan?.approvalDecision ? (
-                            <span className="text-xs text-slate-400">
-                              Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {formatSignalDate(signal.currentPlan.approvalDecision.decidedAt)}
-                            </span>
-                          ) : signal.status === "plan_ready" && signal.currentPlan ? (
-                            <span className="text-xs text-amber-200">Plan awaiting founder decision</span>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="p-5 text-slate-300">{selectedRepo ? "No signals yet for this repo." : "Choose a repo first. Each repo has its own signal memory."}</p>
-              )}
+              <LatestSignalPanel
+                latestRun={latestRun}
+                selectedRepo={selectedRepo}
+                isLoading={isLoading}
+                isCreating={isCreating}
+                isProcessing={isProcessing}
+                latestSignalEvidence={latestSignalEvidence}
+                decidingRunId={decidingRunId}
+                implementingRunId={implementingRunId}
+                onDecide={decideRun}
+                onRunAction={runImplementationAction}
+                onOpenRun={(runId) => router.push(`/dashboard/runs/${runId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`)}
+                onGoGitHub={() => setDashboardTab("github")}
+              />
             </div>
           </section>
         ) : null}
 
+        {activeTab === "all-signals" ? (
+          <section id="all-signals-panel" role="tabpanel" aria-labelledby="all-signals-tab">
+            <AllSignalsPanel
+              selectedRepo={selectedRepo}
+              signals={signals}
+              filteredSignals={filteredSignals}
+              query={signalQuery}
+              filter={signalFilter}
+              isLoading={isLoading}
+              onQueryChange={setSignalQuery}
+              onFilterChange={setSignalFilter}
+              onOpenSignal={(signalId) => setSelectedSignalId(signalId)}
+              onGoGitHub={() => setDashboardTab("github")}
+            />
+          </section>
+        ) : null}
+
         {activeTab === "github" ? (
-          <section
-            id="github-panel"
-            role="tabpanel"
-            aria-labelledby="github-tab"
-            className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6"
-          >
+          <section id="github-panel" role="tabpanel" aria-labelledby="github-tab">
             <GitHubPanel
               githubStatus={githubStatus}
               selectedRepoConnectionId={selectedRepoConnectionId}
@@ -672,7 +623,7 @@ export default function DashboardPage() {
                 window.localStorage.setItem("signalgen:selectedRepoConnectionId", connection._id);
                 setSelectedRepoConnectionId(connection._id);
                 setActiveTab("new-analysis");
-                router.replace(`/dashboard?repoConnectionId=${encodeURIComponent(connection._id)}`);
+                replaceDashboardUrl({ repoConnectionId: connection._id, tab: "new-analysis" });
               }}
               onRepoSelected={loadGitHubStatus}
             />
@@ -686,6 +637,550 @@ export default function DashboardPage() {
         onClose={() => setSelectedSignalId(null)}
       />
     </main>
+  );
+}
+
+function DashboardHeader({ selectedRepo, onRefresh }: { selectedRepo?: RepoConnection; onRefresh: () => void }) {
+  return (
+    <header style={{ marginBottom: 4 }}>
+      <Link href="/" className="sg-link" style={{ display: "inline-flex", marginBottom: 14, fontSize: 14 }}>
+        <Icon name="arrowL" size={16} /> SignalGen home
+      </Link>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
+        <div>
+          <h1 className="sg-display" style={{ fontSize: "clamp(30px,3.6vw,46px)", lineHeight: 1, margin: 0 }}>
+            Founder signal dashboard
+          </h1>
+          <p style={{ maxWidth: 720, color: "var(--ink-soft)", marginTop: 10, fontSize: 16, lineHeight: 1.55 }}>
+            {selectedRepo
+              ? `Current repo: ${selectedRepo.owner}/${selectedRepo.repo}. Sessions, signals, decisions, and PR work stay scoped to this workspace.`
+              : "Choose one connected repo before creating signals, sessions, or PR work."}
+          </p>
+        </div>
+        <Button variant="ghost" onClick={onRefresh} leftIcon={<Icon name="refresh" size={16} />}>
+          Refresh
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+function EmptyRepoState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+  return (
+    <Card className="sg-grid-bg" style={{ padding: "48px 32px", textAlign: "center" }}>
+      <span style={{ width: 54, height: 54, borderRadius: 15, display: "grid", placeItems: "center", margin: "0 auto 16px", background: "var(--inset)", color: "var(--ink-faint)", border: "1px dashed var(--line-2)" }}>
+        <Icon name="branch" size={24} />
+      </span>
+      <h3 style={{ fontSize: 19, fontWeight: 800, marginBottom: 8 }}>{title}</h3>
+      <p style={{ color: "var(--ink-soft)", fontSize: 14.5, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>{body}</p>
+      {action ? <div style={{ marginTop: 18, display: "flex", justifyContent: "center" }}>{action}</div> : null}
+    </Card>
+  );
+}
+
+function UploadCard({
+  selectedRepo,
+  files,
+  fileNames,
+  isDragging,
+  isCreating,
+  isProcessing,
+  pastedText,
+  processingStage,
+  onDraggingChange,
+  onFiles,
+  onCreateRun,
+  onCreateDemoRun,
+  onPasteTextChange,
+  onCreatePasteRun,
+  onGoGitHub,
+}: {
+  selectedRepo?: RepoConnection;
+  files: File[];
+  fileNames: string[];
+  isDragging: boolean;
+  isCreating: boolean;
+  isProcessing: boolean;
+  pastedText: string;
+  processingStage: number;
+  onDraggingChange: (dragging: boolean) => void;
+  onFiles: (files: File[]) => void;
+  onCreateRun: () => void;
+  onCreateDemoRun: () => void;
+  onPasteTextChange: (value: string) => void;
+  onCreatePasteRun: () => void;
+  onGoGitHub: () => void;
+}) {
+  const busy = isCreating || isProcessing;
+  return (
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <Eyebrow>New analysis</Eyebrow>
+      <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>Upload screenshots</h2>
+      <p style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55, marginBottom: 18 }}>
+        {selectedRepo
+          ? `Drop Xiaohongshu, Instagram, Reddit, or app-review screenshots. This session is scoped to ${selectedRepo.owner}/${selectedRepo.repo}.`
+          : "Choose a repo from the GitHub tab before uploading feedback. SignalGen will not create sessions without an explicit repo."}
+      </p>
+
+      {selectedRepo ? (
+        <>
+          {!isProcessing ? (
+            <label
+              style={{
+                width: "100%",
+                minHeight: 184,
+                border: "1.6px dashed var(--line-2)",
+                background: isDragging ? "var(--signal-soft)" : "var(--inset)",
+                borderColor: isDragging ? "var(--signal)" : "var(--line-2)",
+                borderRadius: "var(--rad)",
+                padding: "34px 20px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: ".18s",
+                color: "var(--ink)",
+                display: "grid",
+                placeItems: "center",
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                onDraggingChange(true);
+              }}
+              onDragLeave={() => onDraggingChange(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                onDraggingChange(false);
+                onFiles(Array.from(event.dataTransfer.files));
+              }}
+            >
+              <span>
+                <span style={{ display: "grid", placeItems: "center", width: 46, height: 46, borderRadius: 13, background: "var(--node-bg)", color: "var(--signal)", margin: "0 auto 12px", boxShadow: "var(--shadow-card)" }}>
+                  <Icon name="upload" size={22} />
+                </span>
+                <span style={{ display: "block", fontSize: 17, fontWeight: 800 }}>Drop or choose screenshots</span>
+                <span className="sg-meta" style={{ display: "block", marginTop: 6 }}>PNG, JPG, or WebP · Max 5 · 4 MB each · 8 MB total</span>
+              </span>
+              <input
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                type="file"
+                className="sr-only"
+                onChange={(event) => onFiles(Array.from(event.target.files ?? []))}
+              />
+            </label>
+          ) : (
+            <Panel style={{ padding: 22, borderColor: "var(--signal)" }}>
+              <Eyebrow>Detecting signal…</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 18px" }}>
+                {PROCESSING_COMMENTS.slice(0, Math.min(PROCESSING_COMMENTS.length, processingStage + 1)).map((comment, index) => (
+                  <div key={comment} className="sg-tune" style={{ fontSize: 13.5, padding: "8px 12px", borderRadius: 10, background: "var(--signal-soft)", borderLeft: "2px solid var(--signal)", color: "var(--ink)", animationDelay: `${index * 60}ms` }}>
+                    {comment}
+                  </div>
+                ))}
+              </div>
+              <PipelineStrip current={Math.min(3, processingStage)} stages={SG_STAGES.slice(0, 4)} />
+            </Panel>
+          )}
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}>
+            <button className="sg-link" onClick={onCreateDemoRun} disabled={busy} style={{ background: "none", border: "none", fontFamily: "var(--sans)", fontSize: 14, opacity: busy ? 0.5 : 1 }}>
+              <Icon name="spark" size={13} /> Use sample feedback
+            </button>
+            <Button variant="signal" size="sm" onClick={onCreateRun} disabled={busy || files.length === 0} loading={isCreating && files.length > 0}>
+              {isProcessing ? "Agent is processing..." : isCreating ? "Extracting comments..." : "Upload and run agent"}
+            </Button>
+          </div>
+
+          <Field label="Or paste feedback comments" hint="One comment per line. This keeps the same JSON /api/runs creation path.">
+            <Textarea
+              value={pastedText}
+              onChange={(event) => onPasteTextChange(event.target.value)}
+              placeholder="Paste one comment per line…"
+              rows={4}
+              style={{ marginTop: 10 }}
+            />
+          </Field>
+          <Button variant="ghost" size="sm" onClick={onCreatePasteRun} disabled={busy || pastedText.trim() === ""} style={{ marginTop: 12 }}>
+            Analyze pasted feedback
+          </Button>
+
+          {fileNames.length > 0 ? (
+            <Panel style={{ marginTop: 16, padding: 16 }}>
+              <Eyebrow soft>Selected screenshots</Eyebrow>
+              <ul style={{ margin: "12px 0 0", paddingLeft: 18, color: "var(--ink-soft)", fontSize: 14, lineHeight: 1.7 }}>
+                {fileNames.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+        </>
+      ) : (
+        <EmptyRepoState title="Choose a repo first" body="Uploads and sample feedback are disabled until you choose a connected repository." action={<Button variant="ghost" size="sm" onClick={onGoGitHub}>Open GitHub tab</Button>} />
+      )}
+    </Card>
+  );
+}
+
+function LatestSignalPanel({
+  latestRun,
+  selectedRepo,
+  isLoading,
+  isCreating,
+  isProcessing,
+  latestSignalEvidence,
+  decidingRunId,
+  implementingRunId,
+  onDecide,
+  onRunAction,
+  onOpenRun,
+  onGoGitHub,
+}: {
+  latestRun?: ApiRun;
+  selectedRepo?: RepoConnection;
+  isLoading: boolean;
+  isCreating: boolean;
+  isProcessing: boolean;
+  latestSignalEvidence: NonNullable<ApiRun["evidenceItems"]>;
+  decidingRunId: string | null;
+  implementingRunId: string | null;
+  onDecide: (runId: string, action: "approve" | "reject") => Promise<void>;
+  onRunAction: (runId: string, action: "start" | "prepare-pr") => Promise<void>;
+  onOpenRun: (runId: string) => void;
+  onGoGitHub: () => void;
+}) {
+  return (
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
+        <Eyebrow>Latest signal</Eyebrow>
+        {isCreating || isProcessing ? <Pill variant="signal" dot>Running</Pill> : latestRun ? <Pill variant="success" dot>Repo scoped</Pill> : null}
+      </div>
+
+      {!selectedRepo ? (
+        <EmptyRepoState title="Choose a repo first" body="Each repo has its own saved signal session. Pick a GitHub workspace before reviewing latest signals." action={<Button variant="ghost" size="sm" onClick={onGoGitHub}>Open GitHub tab</Button>} />
+      ) : isLoading ? (
+        <Panel style={{ padding: 20 }}>Loading signals...</Panel>
+      ) : latestRun ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <Gauge value={latestRun.signal?.confidence ?? 0} size={88} stroke={9} label="confidence" sub="signal" />
+            <div>
+              <Pill variant={runStatusVariant(latestRun.status)}>{formatSignalLabel(latestRun.status)}</Pill>
+              <h3 style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.15, margin: "10px 0 8px" }}>{latestRun.signal?.title ?? "Pending analysis"}</h3>
+              <p style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55 }}>{latestRun.signal?.summary ?? ""}</p>
+            </div>
+          </div>
+
+          {latestRun.extractionDiagnostics ? (
+            <Panel style={{ padding: 14 }}>
+              <Eyebrow soft>Extraction</Eyebrow>
+              <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>
+                Extracted from {latestRun.extractionDiagnostics.screenshotCount} screenshot{latestRun.extractionDiagnostics.screenshotCount !== 1 ? "s" : ""} · {latestRun.extractionDiagnostics.commentCount} comment{latestRun.extractionDiagnostics.commentCount !== 1 ? "s" : ""} found
+              </p>
+            </Panel>
+          ) : null}
+
+          <Panel style={{ padding: 14 }}>
+            <Eyebrow soft>Top evidence</Eyebrow>
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              {latestSignalEvidence.length > 0
+                ? latestSignalEvidence.map((item, index) => <Evidence key={item.id} e={{ ...item, comment: item.summary }} i={index} />)
+                : (latestRun.signal?.evidence ?? []).map((quote, index) => <Evidence key={quote} quote={quote} confidence={latestRun.signal?.confidence ?? 0} i={index} />)}
+            </div>
+          </Panel>
+
+          <div className="dashboard-metric-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
+            <MetricTile label="Comments" value={latestRun.comments?.length ?? 0} />
+            <MetricTile label="Clusters" value={latestRun.signalClusters?.length ?? 0} />
+            <MetricTile label="Files" value={latestRun.plan?.filesToChange?.length ?? 0} />
+          </div>
+
+          <InfoGrid title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
+          <InfoGrid title="Guardrails" items={latestRun.plan?.guardrails ?? []} />
+          <InfoGrid title="Files to change" items={latestRun.plan?.filesToChange ?? []} />
+          <InfoGrid title="Acceptance criteria" items={latestRun.plan?.acceptanceCriteria ?? []} />
+
+          <Panel style={{ padding: 16 }}>
+            <Eyebrow soft>Recommended product change</Eyebrow>
+            <p style={{ margin: "8px 0 0", color: "var(--ink)", lineHeight: 1.55 }}>{latestRun.plan?.recommendedChange ?? "Awaiting agent analysis."}</p>
+          </Panel>
+
+          <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={onDecide} />
+          <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={onRunAction} />
+          <Button variant="signal" block onClick={() => onOpenRun(latestRun._id)} rightIcon={<Icon name="arrow" size={16} />}>
+            Open run detail
+          </Button>
+        </div>
+      ) : (
+        <EmptyRepoState title="No signals yet" body="No signals yet for this repo. Upload feedback or use sample feedback to create your first repo-scoped signal." />
+      )}
+    </Card>
+  );
+}
+
+function AllSignalsPanel({
+  selectedRepo,
+  signals,
+  filteredSignals,
+  query,
+  filter,
+  isLoading,
+  onQueryChange,
+  onFilterChange,
+  onOpenSignal,
+  onGoGitHub,
+}: {
+  selectedRepo?: RepoConnection;
+  signals: ApiSignal[];
+  filteredSignals: ApiSignal[];
+  query: string;
+  filter: SignalFilter;
+  isLoading: boolean;
+  onQueryChange: (value: string) => void;
+  onFilterChange: (value: SignalFilter) => void;
+  onOpenSignal: (signalId: string) => void;
+  onGoGitHub: () => void;
+}) {
+  if (!selectedRepo) {
+    return <EmptyRepoState title="Choose a repo first" body="Signal memory is separated per repository. Open the GitHub tab and choose a connected repo to view its signals." action={<Button variant="ghost" size="sm" onClick={onGoGitHub}>Open GitHub tab</Button>} />;
+  }
+
+  return (
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+        <div>
+          <Eyebrow>All signals · {selectedRepo.owner}/{selectedRepo.repo}</Eyebrow>
+          <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", lineHeight: 1.55, fontSize: 14 }}>
+            Signals, evidence, and decisions saved for this connected repository.
+          </p>
+        </div>
+        <Pill variant="outline">{filteredSignals.length} of {signals.length} signals</Pill>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+        <Input aria-label="Search signals" placeholder="Search signals…" value={query} onChange={(event) => onQueryChange(event.target.value)} style={{ maxWidth: 280 }} />
+        <div role="group" aria-label="Filter signals" style={{ display: "flex", gap: 8, overflowX: "auto", maxWidth: "100%" }}>
+          {SIGNAL_FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="sg-tab"
+              aria-pressed={filter === item.id}
+              onClick={() => onFilterChange(item.id)}
+              style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap", background: filter === item.id ? "var(--signal)" : undefined, color: filter === item.id ? "#071014" : undefined }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <Panel style={{ padding: 20 }}>Loading signals...</Panel>
+      ) : filteredSignals.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filteredSignals.map((signal) => (
+            <SignalRow key={signal._id} signal={signal} onOpenSignal={onOpenSignal} />
+          ))}
+        </div>
+      ) : signals.length > 0 ? (
+        <Panel style={{ padding: 40, textAlign: "center", color: "var(--ink-faint)" }}>No signals match your search.</Panel>
+      ) : (
+        <Panel style={{ padding: 40, textAlign: "center", color: "var(--ink-soft)" }}>No signals yet for this repo.</Panel>
+      )}
+    </Card>
+  );
+}
+
+function SignalRow({ signal, onOpenSignal }: { signal: ApiSignal; onOpenSignal: (signalId: string) => void }) {
+  const evidenceItemIds = signal.evidenceItemIds ?? [];
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenSignal(signal._id)}
+      className="sg-row"
+      style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "left", cursor: "pointer", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "var(--rad)", padding: "14px 16px", transition: ".16s", fontFamily: "var(--sans)", color: "var(--ink)", width: "100%" }}
+    >
+      <Gauge value={signal.confidence ?? 0} size={48} stroke={5} label="confidence" sub="" animate={false} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 4 }}>{signal.title || "Untitled signal"}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{signal.summary || "No summary saved yet."}</div>
+        <div className="sg-meta" style={{ marginTop: 6 }}>{evidenceItemIds.length} evidence item{evidenceItemIds.length !== 1 ? "s" : ""} · updated {formatSignalDate(signal.updatedAt)}</div>
+      </div>
+      <div className="signal-row-meta" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Pill variant={signalTypeVariant(signal.type)}>{formatSignalLabel(signal.type)}</Pill>
+          <Pill variant={signalStatusVariant(signal.status)} dot>{formatSignalLabel(signal.status)}</Pill>
+        </div>
+        <span className="sg-meta">Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}</span>
+        {signal.currentPlan?.approvalDecision ? (
+          <span className="sg-meta">Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {formatSignalDate(signal.currentPlan.approvalDecision.decidedAt)}</span>
+        ) : signal.status === "plan_ready" && signal.currentPlan ? (
+          <span style={{ color: "var(--warning)", fontSize: 12 }}>Plan awaiting founder decision</span>
+        ) : null}
+        <span className="sg-meta">View details</span>
+      </div>
+      <span style={{ color: "var(--ink-faint)" }}><Icon name="arrow" size={18} /></span>
+    </button>
+  );
+}
+
+function GitHubPanel({
+  githubStatus,
+  selectedRepoConnectionId,
+  onActiveRepoSelected,
+  onRepoSelected,
+}: {
+  githubStatus: GitHubStatus;
+  selectedRepoConnectionId: string;
+  onActiveRepoSelected: (connection: RepoConnection) => void;
+  onRepoSelected: () => void;
+}) {
+  const [owner, setOwner] = useState("");
+  const [repo, setRepo] = useState("");
+  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  async function submitRepoSelection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (githubStatus.status !== "installed") return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      const createResponse = await fetch("/api/repo-connections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo }),
+      });
+      if (!createResponse.ok) {
+        const data = (await createResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not create repo connection.");
+      }
+      const createData = (await createResponse.json()) as { connection: RepoConnection };
+      if (!createData.connection._id) {
+        throw new Error("Repo connection was created without an id.");
+      }
+
+      const selectResponse = await fetch(`/api/repo-connections/${createData.connection._id}/select-repo`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, repo, defaultBranch, installationId: githubStatus.installationId }),
+      });
+      if (!selectResponse.ok) {
+        const data = (await selectResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not select repository.");
+      }
+
+      onRepoSelected();
+    } catch (caughtError) {
+      setSubmitError(caughtError instanceof Error ? caughtError.message : "Could not select repository.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (githubStatus.status === "loading") {
+    return <Card style={{ padding: "var(--pad-card)" }}>Loading GitHub connection status...</Card>;
+  }
+
+  if (githubStatus.status === "error") {
+    return <Panel role="alert" style={{ borderColor: "var(--error)", color: "#fecaca", padding: 18 }}>{githubStatus.message}</Panel>;
+  }
+
+  if (githubStatus.status === "disconnected") {
+    return (
+      <Card style={{ padding: "var(--pad-card)" }}>
+        <Eyebrow>GitHub</Eyebrow>
+        <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>GitHub is not connected.</h2>
+        <p style={{ maxWidth: 720, fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+          Connect the GitHub App so SignalGen can remember which product repository belongs to this workspace.
+        </p>
+        <a href="/api/github/install" className="sg-btn sg-btn--signal" style={{ display: "inline-flex", marginTop: 18 }}>
+          Connect GitHub App
+        </a>
+      </Card>
+    );
+  }
+
+  if (githubStatus.status === "installed") {
+    return (
+      <Card style={{ padding: "var(--pad-card)" }}>
+        <Eyebrow>GitHub</Eyebrow>
+        <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>GitHub App installed. Select a repository to connect.</h2>
+        <p style={{ maxWidth: 720, fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+          Repo write capabilities remain disabled until all implementation gates are active.
+        </p>
+        <form onSubmit={(event) => void submitRepoSelection(event)} style={{ marginTop: 22, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 16 }} className="github-connect-grid">
+          <Field label="Owner">
+            <Input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="viviannnl" />
+          </Field>
+          <Field label="Repo">
+            <Input value={repo} onChange={(event) => setRepo(event.target.value)} placeholder="SignalGen" />
+          </Field>
+          <Field label="Default branch">
+            <Input value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} placeholder="main" />
+          </Field>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Button type="submit" variant="signal" disabled={isSubmitting || owner.trim() === "" || repo.trim() === "" || defaultBranch.trim() === ""} loading={isSubmitting}>
+              {isSubmitting ? "Connecting repo..." : "Connect repository"}
+            </Button>
+            {submitError ? <p style={{ marginTop: 12, color: "#fecaca", fontSize: 14 }}>{submitError}</p> : null}
+          </div>
+        </form>
+      </Card>
+    );
+  }
+
+  const connectedRepos =
+    Array.isArray(githubStatus.repoConnections) && githubStatus.repoConnections.length > 0
+      ? githubStatus.repoConnections
+      : [githubStatus.repoConnection];
+  const enabledForDraftPrs = connectedRepos.filter(
+    (connection) => connection.capabilities.branch_push && connection.capabilities.pr_creation,
+  );
+  const enabledForIssues = connectedRepos.filter((connection) => connection.capabilities.issue_creation);
+
+  return (
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <Eyebrow>GitHub</Eyebrow>
+      <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>Connected repositories</h2>
+      <p style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55, marginBottom: 22, maxWidth: 820 }}>
+        Choose one repo to open its workspace. Connected repos are account-level access; sessions, signals, decisions, and PR work are repo-scoped. {enabledForDraftPrs.length} of {connectedRepos.length} repos can receive SignalGen branches, commits, and draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
+      </p>
+      <div style={{ display: "grid", gap: 14 }}>
+        {connectedRepos.map((connection) => {
+          const canCreateDraftPr = connection.capabilities.branch_push && connection.capabilities.pr_creation;
+          const isActive = connection._id === selectedRepoConnectionId;
+          return (
+            <Panel key={connection._id ?? `${connection.owner}/${connection.repo}`} className="sg-ticked" style={{ padding: 22, borderColor: isActive ? "var(--success-line)" : "var(--line)" }}>
+              <div className="github-repo-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 32px", marginBottom: 18 }}>
+                <RepoFact label="Owner" value={connection.owner} />
+                <RepoFact label="Repo" value={connection.repo} />
+                <RepoFact label="Default branch" value={connection.defaultBranch} />
+                <RepoFact label="Installation ID" value={connection.installationId ?? githubStatus.installationId} />
+                <RepoFact label="Draft PR automation" value={canCreateDraftPr ? "Enabled" : "Disabled"} tone={canCreateDraftPr ? "success" : "warning"} />
+                <RepoFact label="Issues" value={connection.capabilities.issue_creation ? "Enabled" : "Disabled"} tone={connection.capabilities.issue_creation ? "success" : "muted"} />
+              </div>
+              <Button type="button" variant="signal" size="sm" onClick={() => onActiveRepoSelected(connection)} disabled={!connection._id || isActive}>
+                {isActive ? "Current repo workspace" : "Open workspace"}
+              </Button>
+            </Panel>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function RepoFact({ label, value, tone = "muted" }: { label: string; value: string; tone?: "success" | "warning" | "muted" }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+      <span className="sg-meta">{label}</span>
+      <span style={{ color: tone === "success" ? "var(--success)" : tone === "warning" ? "var(--warning)" : "var(--ink)", fontWeight: 700 }}>{value}</span>
+    </div>
   );
 }
 
@@ -845,191 +1340,6 @@ function SignalDetailDrawer({
   );
 }
 
-function GitHubPanel({
-  githubStatus,
-  selectedRepoConnectionId,
-  onActiveRepoSelected,
-  onRepoSelected,
-}: {
-  githubStatus: GitHubStatus;
-  selectedRepoConnectionId: string;
-  onActiveRepoSelected: (connection: RepoConnection) => void;
-  onRepoSelected: () => void;
-}) {
-  const [owner, setOwner] = useState("");
-  const [repo, setRepo] = useState("");
-  const [defaultBranch, setDefaultBranch] = useState("main");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-
-  async function submitRepoSelection(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (githubStatus.status !== "installed") return;
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-
-    try {
-      const createResponse = await fetch("/api/repo-connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, repo }),
-      });
-      if (!createResponse.ok) {
-        const data = (await createResponse.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Could not create repo connection.");
-      }
-      const createData = (await createResponse.json()) as { connection: RepoConnection };
-      if (!createData.connection._id) {
-        throw new Error("Repo connection was created without an id.");
-      }
-
-      const selectResponse = await fetch(`/api/repo-connections/${createData.connection._id}/select-repo`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, repo, defaultBranch, installationId: githubStatus.installationId }),
-      });
-      if (!selectResponse.ok) {
-        const data = (await selectResponse.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Could not select repository.");
-      }
-
-      onRepoSelected();
-    } catch (caughtError) {
-      setSubmitError(caughtError instanceof Error ? caughtError.message : "Could not select repository.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  if (githubStatus.status === "loading") {
-    return <p className="text-slate-300">Loading GitHub connection status...</p>;
-  }
-
-  if (githubStatus.status === "error") {
-    return <p className="rounded-3xl border border-red-400/30 bg-red-400/10 p-4 text-red-100">{githubStatus.message}</p>;
-  }
-
-  if (githubStatus.status === "disconnected") {
-    return (
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
-        <h2 className="mt-3 text-2xl font-semibold">GitHub is not connected.</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-          Connect the GitHub App so SignalGen can remember which product repository belongs to this workspace.
-        </p>
-        <a
-          href="/api/github/install"
-          className="mt-5 inline-flex rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200"
-        >
-          Connect GitHub App
-        </a>
-      </div>
-    );
-  }
-
-  if (githubStatus.status === "installed") {
-    return (
-      <div>
-        <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
-        <h2 className="mt-3 text-2xl font-semibold">GitHub App installed. Select a repository to connect.</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-          Repo write capabilities remain disabled until all implementation gates are active.
-        </p>
-        <form onSubmit={(event) => void submitRepoSelection(event)} className="mt-6 grid gap-4 md:grid-cols-3">
-          <label className="text-sm font-semibold text-slate-200">
-            Owner
-            <input
-              value={owner}
-              onChange={(event) => setOwner(event.target.value)}
-              className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
-              placeholder="viviannnl"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-200">
-            Repo
-            <input
-              value={repo}
-              onChange={(event) => setRepo(event.target.value)}
-              className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
-              placeholder="SignalGen"
-            />
-          </label>
-          <label className="text-sm font-semibold text-slate-200">
-            Default branch
-            <input
-              value={defaultBranch}
-              onChange={(event) => setDefaultBranch(event.target.value)}
-              className="mt-2 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-300/40"
-              placeholder="main"
-            />
-          </label>
-          <div className="md:col-span-3">
-            <button
-              type="submit"
-              disabled={isSubmitting || owner.trim() === "" || repo.trim() === "" || defaultBranch.trim() === ""}
-              className="rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSubmitting ? "Connecting repo..." : "Connect repository"}
-            </button>
-            {submitError ? <p className="mt-3 text-sm text-red-200">{submitError}</p> : null}
-          </div>
-        </form>
-      </div>
-    );
-  }
-
-  const connectedRepos =
-    Array.isArray(githubStatus.repoConnections) && githubStatus.repoConnections.length > 0
-      ? githubStatus.repoConnections
-      : [githubStatus.repoConnection];
-  const enabledForDraftPrs = connectedRepos.filter(
-    (connection) => connection.capabilities.branch_push && connection.capabilities.pr_creation,
-  );
-  const enabledForIssues = connectedRepos.filter((connection) => connection.capabilities.issue_creation);
-
-  return (
-    <div>
-      <p className="text-sm font-semibold uppercase tracking-[0.25em] text-cyan-200">GitHub</p>
-      <h2 className="mt-3 text-2xl font-semibold">Connected repositories</h2>
-      <p className="mt-3 text-sm leading-6 text-slate-300">
-        Choose one repo to open its workspace. Connected repos are account-level access; sessions, signals, decisions, and PR work are repo-scoped.
-        {" "}{enabledForDraftPrs.length} of {connectedRepos.length} repos can receive SignalGen branches, commits, and draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
-      </p>
-      <div className="mt-5 grid gap-3">
-        {connectedRepos.map((connection) => {
-          const canCreateDraftPr = connection.capabilities.branch_push && connection.capabilities.pr_creation;
-          const isActive = connection._id === selectedRepoConnectionId;
-          return (
-            <div
-              key={connection._id ?? `${connection.owner}/${connection.repo}`}
-              className="grid gap-3 rounded-3xl bg-slate-950/70 p-5 text-sm text-slate-300 md:grid-cols-2"
-            >
-              <p>Owner: {connection.owner}</p>
-              <p>Repo: {connection.repo}</p>
-              <p>Default branch: {connection.defaultBranch}</p>
-              <p>Installation ID: {githubStatus.installationId}</p>
-              <p className={canCreateDraftPr ? "text-emerald-200" : "text-amber-200"}>
-                Draft PR automation: {canCreateDraftPr ? "Enabled" : "Disabled"}
-              </p>
-              <p>Issues: {connection.capabilities.issue_creation ? "Enabled" : "Disabled"}</p>
-              <button
-                type="button"
-                onClick={() => onActiveRepoSelected(connection)}
-                disabled={!connection._id || isActive}
-                className="rounded-full bg-cyan-300 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2"
-              >
-                {isActive ? "Current repo workspace" : "Open workspace"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function FounderDecisionPanel({
   run,
   decidingRunId,
@@ -1041,53 +1351,43 @@ function FounderDecisionPanel({
 }) {
   if (run.founderDecision) {
     return (
-      <div className="rounded-3xl border border-emerald-300/20 bg-emerald-300/10 p-5">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-200">Founder decision</p>
-        <p className="mt-3 text-lg font-semibold text-white">
-          {run.founderDecision.action === "approve" ? "Approved" : "Rejected"}
-        </p>
-        <p className="mt-2 text-sm text-slate-300">{new Date(run.founderDecision.decidedAt).toLocaleString()}</p>
-        {run.founderDecision.note ? <p className="mt-3 text-sm text-slate-200">“{run.founderDecision.note}”</p> : null}
-      </div>
+      <Panel style={{ borderColor: "var(--success-line)", background: "rgba(74,222,128,.10)", padding: 18 }}>
+        <Eyebrow>Founder decision</Eyebrow>
+        <p style={{ margin: "10px 0 0", fontSize: 18, fontWeight: 800 }}>{run.founderDecision.action === "approve" ? "Approved" : "Rejected"}</p>
+        <p style={{ margin: "6px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>{new Date(run.founderDecision.decidedAt).toLocaleString()}</p>
+        {run.founderDecision.note ? <p style={{ margin: "10px 0 0", color: "var(--ink-soft)", fontSize: 14 }}>“{run.founderDecision.note}”</p> : null}
+      </Panel>
     );
   }
 
   if (run.status !== "plan_ready") {
     return (
-      <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-        <p className="text-sm font-semibold text-white">Founder approval gate</p>
-        <p className="mt-2 text-sm leading-6 text-slate-300">
+      <Panel style={{ padding: 18 }}>
+        <Eyebrow soft>Founder approval gate</Eyebrow>
+        <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", lineHeight: 1.55, fontSize: 14 }}>
           Approval controls appear once the agent has enough evidence and marks a run as plan-ready.
         </p>
-      </div>
+      </Panel>
     );
   }
 
   const isDeciding = decidingRunId === run._id;
 
   return (
-    <div className="rounded-3xl border border-amber-300/25 bg-amber-300/10 p-5">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-200">Founder approval required</p>
-      <p className="mt-3 text-sm leading-6 text-slate-200">
+    <Panel style={{ borderColor: "rgba(251,191,36,.35)", background: "rgba(251,191,36,.10)", padding: 18 }}>
+      <Eyebrow>Founder approval required</Eyebrow>
+      <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>
         SignalGen found enough evidence to propose a plan. Approving only records your decision for the next PR step; it does not edit code yet.
       </p>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <button
-          onClick={() => void onDecide(run._id, "approve")}
-          disabled={isDeciding}
-          className="rounded-full bg-emerald-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+      <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Button variant="success" onClick={() => void onDecide(run._id, "approve")} disabled={isDeciding} loading={isDeciding}>
           {isDeciding ? "Saving..." : "Approve plan"}
-        </button>
-        <button
-          onClick={() => void onDecide(run._id, "reject")}
-          disabled={isDeciding}
-          className="rounded-full border border-red-300/40 px-5 py-3 text-sm font-semibold text-red-100 transition hover:border-red-200 hover:text-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        </Button>
+        <Button variant="danger" onClick={() => void onDecide(run._id, "reject")} disabled={isDeciding}>
           Reject plan
-        </button>
+        </Button>
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -1108,83 +1408,56 @@ function ImplementationPanel({
 
   if (!run.implementation) {
     return (
-      <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-5">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Guarded implementation</p>
-        <p className="mt-3 text-sm leading-6 text-slate-200">
+      <Panel style={{ borderColor: "var(--signal)", background: "var(--signal-soft)", padding: 18 }}>
+        <Eyebrow>Guarded implementation</Eyebrow>
+        <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>
           This approved signal is ready for the next safe agent step. Starting implementation only queues an auditable job; it does not edit code or create a PR yet.
         </p>
-        <button
-          onClick={() => void onRunAction(run._id, "start")}
-          disabled={isWorking}
-          className="mt-5 rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <Button variant="signal" onClick={() => void onRunAction(run._id, "start")} disabled={isWorking} loading={isWorking} style={{ marginTop: 16 }}>
           {isWorking ? "Starting..." : "Start guarded implementation"}
-        </button>
-      </div>
+        </Button>
+      </Panel>
     );
   }
 
   return (
-    <div className="rounded-3xl border border-cyan-300/20 bg-cyan-300/10 p-5">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-200">Implementation memory</p>
-      <p className="mt-3 text-lg font-semibold text-white">{run.implementation.status}</p>
-      <p className="mt-2 text-sm text-slate-300">Branch: {run.implementation.branchName}</p>
-      <p className="mt-3 text-sm leading-6 text-slate-200">{run.implementation.summary}</p>
+    <Panel style={{ borderColor: "var(--signal)", background: "var(--signal-soft)", padding: 18 }}>
+      <Eyebrow>Implementation memory</Eyebrow>
+      <p style={{ margin: "10px 0 0", fontSize: 18, fontWeight: 800 }}>{run.implementation.status}</p>
+      <p style={{ margin: "6px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>Branch: {run.implementation.branchName}</p>
+      <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>{run.implementation.summary}</p>
       {run.implementation.status === "queued" ? (
-        <button
-          onClick={() => void onRunAction(run._id, "prepare-pr")}
-          disabled={isWorking}
-          className="mt-5 rounded-full bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <Button variant="signal" onClick={() => void onRunAction(run._id, "prepare-pr")} disabled={isWorking} loading={isWorking} style={{ marginTop: 16 }}>
           {isWorking ? "Preparing..." : "Prepare PR draft"}
-        </button>
+        </Button>
       ) : null}
       {run.implementation.prDraft ? (
-        <div className="mt-5 rounded-2xl bg-slate-950/70 p-4">
-          <p className="text-sm font-semibold text-white">{run.implementation.prDraft.title}</p>
-          <p className="mt-2 text-xs text-slate-400">PR branch: {run.implementation.prDraft.branchName}</p>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Files to inspect</p>
-          <ul className="mt-2 space-y-1 text-sm text-slate-300">
-            {run.implementation.prDraft.filesToInspect.map((item) => (
-              <li key={item}>• {item}</li>
-            ))}
-          </ul>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Test commands</p>
-          <ul className="mt-2 space-y-1 text-sm text-slate-300">
-            {run.implementation.prDraft.testCommands.map((item) => (
-              <li key={item}>• {item}</li>
-            ))}
-          </ul>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Checklist</p>
-          <ul className="mt-2 space-y-2 text-sm text-slate-300">
-            {run.implementation.prDraft.checklist.map((item) => (
-              <li key={item}>• {item}</li>
-            ))}
-          </ul>
-          <details className="mt-4 text-sm text-slate-300">
-            <summary className="cursor-pointer text-cyan-100">View PR body draft</summary>
-            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-900 p-4 text-xs leading-5 text-slate-200">
+        <Panel style={{ marginTop: 16, padding: 16 }}>
+          <p style={{ fontWeight: 800 }}>{run.implementation.prDraft.title}</p>
+          <p className="sg-meta" style={{ marginTop: 6 }}>PR branch: {run.implementation.prDraft.branchName}</p>
+          <InfoGrid title="Files to inspect" items={run.implementation.prDraft.filesToInspect} />
+          <InfoGrid title="Test commands" items={run.implementation.prDraft.testCommands} />
+          <InfoGrid title="Checklist" items={run.implementation.prDraft.checklist} />
+          <details style={{ marginTop: 14, color: "var(--ink-soft)", fontSize: 14 }}>
+            <summary className="sg-link" style={{ cursor: "pointer" }}>View PR body draft</summary>
+            <pre style={{ marginTop: 12, maxHeight: 288, overflow: "auto", whiteSpace: "pre-wrap", borderRadius: 14, background: "var(--inset)", padding: 14, color: "var(--ink)", fontSize: 12, lineHeight: 1.45 }}>
               {run.implementation.prDraft.body}
             </pre>
           </details>
-        </div>
+        </Panel>
       ) : null}
-    </div>
+    </Panel>
   );
 }
 
-function InfoCard({ title, items }: { title: string; items: string[] }) {
+function InfoGrid({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="rounded-3xl bg-slate-950/70 p-5">
-      <p className="text-sm font-semibold text-white">{title}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-300">
-        {items.length > 0 ? (
-          items.map((item) => <li key={item}>• {item}</li>)
-        ) : (
-          <li className="text-slate-500">No items yet.</li>
-        )}
+    <Panel style={{ padding: 14 }}>
+      <Eyebrow soft>{title}</Eyebrow>
+      <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: "var(--ink-soft)", lineHeight: 1.65, fontSize: 14 }}>
+        {items.length > 0 ? items.map((item) => <li key={item}>{item}</li>) : <li style={{ color: "var(--ink-faint)" }}>No items yet.</li>}
       </ul>
-    </div>
+    </Panel>
   );
 }
 
@@ -1217,6 +1490,44 @@ function SignalDetailList({ title, items = [] }: { title: string; items?: string
   );
 }
 
+function initialDashboardTab(): DashboardTab {
+  if (typeof window === "undefined") return "new-analysis";
+  const tabFromUrl = new URLSearchParams(window.location.search).get("tab");
+  return isDashboardTab(tabFromUrl) ? tabFromUrl : "new-analysis";
+}
+
+function validateDashboardScreenshotFiles(inputFiles: File[]): { files: File[]; error: string | null } {
+  const files = inputFiles.slice(0, MAX_SCREENSHOT_FILES);
+  if (inputFiles.length > MAX_SCREENSHOT_FILES) {
+    return { files, error: "Please upload at most 5 screenshots per run. The first 5 were selected." };
+  }
+
+  const unsupported = files.find((file) => !ACCEPTED_SCREENSHOT_TYPES.has(file.type));
+  if (unsupported) {
+    return { files: [], error: "Screenshots must be PNG, JPG, or WebP files." };
+  }
+
+  const oversized = files.find((file) => file.size > MAX_SCREENSHOT_FILE_BYTES);
+  if (oversized) {
+    return { files: [], error: "Each screenshot must be 4 MB or smaller." };
+  }
+
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalSize > MAX_SCREENSHOT_TOTAL_BYTES) {
+    return { files: [], error: "Upload at most 8 MB of screenshots per run." };
+  }
+
+  return { files, error: null };
+}
+
+function isDashboardTab(value: string | null): value is DashboardTab {
+  return value === "new-analysis" || value === "all-signals" || value === "github";
+}
+
+function shortId(value: string) {
+  return value.length > 8 ? value.slice(-8) : value;
+}
+
 function formatSignalLabel(value: string | undefined): string {
   if (!value) return "Not available";
   return value.replaceAll("_", " ");
@@ -1232,4 +1543,58 @@ function formatSignalDate(value: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Not available";
   return date.toLocaleString();
+}
+
+function signalTypeVariant(type: string | undefined): "success" | "warning" | "error" | "info" | "signal" | "outline" {
+  switch (type) {
+    case "feature_request":
+      return "signal";
+    case "bug":
+      return "error";
+    case "praise":
+      return "success";
+    case "trust_objection":
+    case "pricing":
+      return "warning";
+    case "friction":
+      return "info";
+    default:
+      return "outline";
+  }
+}
+
+function signalStatusVariant(status: string | undefined): "success" | "warning" | "error" | "info" | "signal" | "outline" {
+  switch (status) {
+    case "approved":
+    case "implemented":
+      return "success";
+    case "rejected":
+      return "error";
+    case "plan_ready":
+      return "warning";
+    case "accumulating":
+    case "needs_more_evidence":
+      return "info";
+    default:
+      return "outline";
+  }
+}
+
+function runStatusVariant(status: string | undefined): "success" | "warning" | "error" | "info" | "signal" | "outline" {
+  switch (status) {
+    case "approved":
+    case "pr_created":
+      return "success";
+    case "rejected":
+    case "failed":
+      return "error";
+    case "plan_ready":
+    case "needs_review":
+      return "warning";
+    case "signal_detected":
+    case "insufficient_evidence":
+      return "info";
+    default:
+      return "outline";
+  }
 }
