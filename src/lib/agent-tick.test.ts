@@ -129,7 +129,7 @@ describe("processAgentTick", () => {
   });
 
   it("projects analyzed clusters into signal memory when the store supports signal persistence", async () => {
-    const persistSignalMemory = vi.fn(async () => undefined);
+    const persistSignalMemory = vi.fn<NonNullable<AgentTickStore["persistSignalMemory"]>>(async () => undefined);
     const store: AgentTickStore = {
       listPendingRuns: vi.fn(async () => [makeRun({ workspaceId: "ws-1" })]),
       updateRunAnalysis: vi.fn(async () => true),

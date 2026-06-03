@@ -12,8 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    "SignalGen2-redesign/**",
-    "redesign-handoff.md",
+    // Local Claude Design export artifacts are source-of-truth references, not app code.
+    "redesign-reference/**",
   ]),
 ]);
 

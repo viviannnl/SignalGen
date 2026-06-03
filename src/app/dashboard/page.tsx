@@ -2,9 +2,30 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthControls } from "../auth-controls";
+import { ThemeMenu } from "@/components/theme-menu";
+import {
+  Button,
+  Card,
+  Evidence,
+  Eyebrow,
+  Field,
+  Gauge,
+  Icon,
+  Input,
+  LoopMap,
+  MetricTile,
+  Panel,
+  Pill,
+  PipelineStrip,
+  SG_STAGES,
+  Tab,
+  Tabs,
+  Textarea,
+  stageIndex,
+} from "@/components/ui";
 import type { ProductSignal, RepoConnection, SignalGenRun, SignalPlan } from "@/lib/types";
 
 type ApiRun = SignalGenRun & { _id: string };
@@ -16,6 +37,37 @@ type GitHubStatus =
   | { status: "disconnected" }
   | { status: "installed"; installationId: string }
   | { status: "connected"; installationId: string; repoConnection: RepoConnection; repoConnections?: RepoConnection[] };
+
+type SignalFilter = "all" | "feature_request" | "friction" | "bug" | "trust_objection" | "pricing" | "praise" | "noise";
+
+const DASHBOARD_TABS: Array<{ id: DashboardTab; label: string }> = [
+  { id: "new-analysis", label: "New analysis" },
+  { id: "all-signals", label: "All signals" },
+  { id: "github", label: "GitHub" },
+];
+
+const SIGNAL_FILTERS: Array<{ id: SignalFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "feature_request", label: "Feature" },
+  { id: "friction", label: "Friction" },
+  { id: "bug", label: "Bug" },
+  { id: "trust_objection", label: "Trust" },
+  { id: "pricing", label: "Pricing" },
+  { id: "praise", label: "Praise" },
+  { id: "noise", label: "Noise" },
+];
+
+const MAX_SCREENSHOT_FILES = 5;
+const MAX_SCREENSHOT_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_SCREENSHOT_TOTAL_BYTES = 8 * 1024 * 1024;
+const ACCEPTED_SCREENSHOT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+const PROCESSING_COMMENTS = [
+  "Extracting screenshot text and comments…",
+  "Clustering repeated product pain…",
+  "Drafting founder-safe plan guardrails…",
+  "Saving repo-scoped signal memory…",
+];
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -34,6 +86,8 @@ export default function DashboardPage() {
   const [githubStatus, setGithubStatus] = useState<GitHubStatus>({ status: "loading" });
   const [selectedRepoConnectionId, setSelectedRepoConnectionId] = useState("");
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
+  const [signalQuery, setSignalQuery] = useState("");
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>("all");
 
   const connectedRepos = useMemo(() => {
     if (githubStatus.status !== "connected") return [];
@@ -45,6 +99,45 @@ export default function DashboardPage() {
   const selectedSignal = useMemo(
     () => signals.find((signal) => signal._id === selectedSignalId) ?? null,
     [selectedSignalId, signals],
+  );
+  const latestRun = runs[0];
+  const fileNames = useMemo(() => files.map((file) => file.name), [files]);
+  const filteredSignals = useMemo(() => {
+    const normalizedQuery = signalQuery.trim().toLowerCase();
+    return signals.filter((signal) => {
+      const matchesFilter = signalFilter === "all" || signal.type === signalFilter;
+      const haystack = [signal.title, signal.summary, signal.status, signal.currentPlan?.recommendedChange]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return matchesFilter && (normalizedQuery === "" || haystack.includes(normalizedQuery));
+    });
+  }, [signalFilter, signalQuery, signals]);
+
+  const replaceDashboardUrl = useCallback(
+    (next: { repoConnectionId?: string; tab?: DashboardTab }) => {
+      if (typeof window === "undefined") return;
+      const params = new URLSearchParams(window.location.search);
+      const repoConnectionId = next.repoConnectionId ?? (selectedRepoConnectionId || params.get("repoConnectionId") || "");
+      const tab = next.tab ?? activeTab;
+      if (repoConnectionId) {
+        params.set("repoConnectionId", repoConnectionId);
+      } else {
+        params.delete("repoConnectionId");
+      }
+      params.set("tab", tab);
+      const query = params.toString();
+      router.replace(query ? `/dashboard?${query}` : "/dashboard", { scroll: false });
+    },
+    [activeTab, router, selectedRepoConnectionId],
+  );
+
+  const setDashboardTab = useCallback(
+    (tab: DashboardTab) => {
+      setActiveTab(tab);
+      replaceDashboardUrl({ tab });
+    },
+    [replaceDashboardUrl],
   );
 
   const loadSignals = useCallback(async (repoConnectionId: string) => {
@@ -108,8 +201,12 @@ export default function DashboardPage() {
     [loadSignals, selectedRepoConnectionId],
   );
 
-  const latestRun = runs[0];
-  const fileNames = useMemo(() => files.map((file) => file.name), [files]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setActiveTab(initialDashboardTab());
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
 
   useEffect(() => {
     if (!selectedSignal) return;
@@ -261,11 +358,19 @@ export default function DashboardPage() {
     }
   }
 
-  async function decideRun(runId: string, action: "approve" | "reject", note = "") {
+  async function decideRun(runId: string, action: "approve" | "reject") {
     if (!selectedRepoConnectionId) {
       setError("Choose a repo before saving a founder decision.");
       return;
     }
+    const note = window.prompt(
+      action === "approve"
+        ? "Optional approval note for the agent before future PR work:"
+        : "Optional rejection note so SignalGen remembers why this was rejected:",
+      "",
+    );
+
+    if (note === null) return;
 
     setDecidingRunId(runId);
     setError(null);
@@ -347,7 +452,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (githubStatus.status !== "connected") return;
-    const repoFromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("repoConnectionId") ?? "" : "";
+    const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+    const repoFromUrl = searchParams.get("repoConnectionId") ?? "";
     const savedRepo = typeof window !== "undefined" ? window.localStorage.getItem("signalgen:selectedRepoConnectionId") ?? "" : "";
     const candidate = repoFromUrl || savedRepo;
     if (candidate && connectedRepos.some((connection) => connection._id === candidate)) {
@@ -366,296 +472,150 @@ export default function DashboardPage() {
     return () => window.clearTimeout(timeoutId);
   }, [loadRuns, selectedRepoConnectionId]);
 
+  const latestSignalEvidence = latestRun?.evidenceItems?.slice(0, 2) ?? [];
+  const processingStage = isProcessing ? 2 : isCreating ? 1 : latestRun ? stageIndex(latestRun.status) : 0;
+
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[var(--bg)] px-6 py-8 text-[var(--ink)] sm:px-10 sm:pb-20">
-      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-8">
-        <nav className="flex min-w-0 flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="min-w-0">
-            <Link href="/" className="sg-link text-sm">
-              ← SignalGen home
-            </Link>
-            <h1 className="mt-3 break-words text-[clamp(2.25rem,10vw,2.75rem)] font-semibold leading-[1.05] tracking-tight sm:text-4xl">Founder signal dashboard</h1>
-            <p className="mt-2 max-w-2xl break-words text-[var(--ink-soft)]">
-              {selectedRepo ? `Current repo: ${selectedRepo.owner}/${selectedRepo.repo}` : "Choose one connected repo before creating signals, sessions, or PR work."}
-            </p>
-          </div>
-          <button
-            onClick={() => void loadRuns()}
-            className="rounded-full border border-[var(--line-strong)] px-5 py-3 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--rose)] hover:text-[var(--rose-hover)]"
-          >
-            Refresh
-          </button>
-        </nav>
+    <main className="sg-grid-bg" style={{ minHeight: "100vh", background: "var(--bg)", padding: "32px clamp(16px,4vw,42px) 56px", color: "var(--ink)" }}>
+      <style>{`
+        @media (max-width: 920px) {
+          .dashboard-two-col,
+          .github-connect-grid,
+          .github-repo-grid { grid-template-columns: 1fr !important; }
+          .dashboard-metric-grid { grid-template-columns: 1fr !important; }
+        }
+        @media (max-width: 640px) {
+          .signal-row-meta { align-items: flex-start !important; }
+          .sg-row { align-items: flex-start !important; flex-direction: column !important; }
+        }
+      `}</style>
+      <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", flexDirection: "column", gap: 26 }}>
+        <DashboardHeader selectedRepo={selectedRepo} onRefresh={() => void loadRuns()} />
 
         <AuthControls />
 
-        <div className="flex gap-1 self-start rounded-full border border-[var(--line)] bg-[var(--card)] p-1" role="tablist" aria-label="Dashboard sections">
-          <button
-            id="new-analysis-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "new-analysis"}
-            aria-controls="new-analysis-panel"
-            onClick={() => setActiveTab("new-analysis")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              activeTab === "new-analysis" ? "bg-[var(--primary)] text-[var(--primary-ink)]" : "text-[var(--ink-soft)] hover:text-[var(--primary)]"
-            }`}
-          >
-            New analysis
-          </button>
-          <button
-            id="all-signals-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "all-signals"}
-            aria-controls="all-signals-panel"
-            onClick={() => setActiveTab("all-signals")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              activeTab === "all-signals" ? "bg-[var(--primary)] text-[var(--primary-ink)]" : "text-[var(--ink-soft)] hover:text-[var(--primary)]"
-            }`}
-          >
-            All signals
-          </button>
-          <button
-            id="github-tab"
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "github"}
-            aria-controls="github-panel"
-            onClick={() => setActiveTab("github")}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              activeTab === "github" ? "bg-[var(--primary)] text-[var(--primary-ink)]" : "text-[var(--ink-soft)] hover:text-[var(--primary)]"
-            }`}
-          >
-            GitHub
-          </button>
-        </div>
+        <Tabs aria-label="Dashboard sections" style={{ alignSelf: "flex-start", maxWidth: "100%", overflowX: "auto", padding: 6, gap: 6 }}>
+          {DASHBOARD_TABS.map((tab) => (
+            <Tab
+              key={tab.id}
+              id={`${tab.id}-tab`}
+              selected={activeTab === tab.id}
+              aria-controls={`${tab.id}-panel`}
+              onClick={() => setDashboardTab(tab.id)}
+              style={{ whiteSpace: "nowrap", padding: "13px 26px", fontSize: 15.5 }}
+            >
+              {tab.label}
+            </Tab>
+          ))}
+        </Tabs>
 
         {error ? (
-          <div className="rounded-3xl border border-[var(--error-line)] bg-[var(--error-bg)] p-4 text-[var(--error)]">{error}</div>
+          <Panel role="alert" style={{ borderColor: "var(--error-line)", background: "var(--error-bg)", color: "var(--error)", padding: 16 }}>
+            {error}
+          </Panel>
         ) : null}
 
         {activeTab === "new-analysis" ? (
-          <section
-            id="new-analysis-panel"
-            role="tabpanel"
-            aria-labelledby="new-analysis-tab"
-            className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]"
-          >
-          <div className="sg-card p-6">
-            <p className="sg-eyebrow">New analysis</p>
-            <h2 className="mt-3 text-2xl font-semibold">Upload screenshots</h2>
-            <p className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">
-              {selectedRepo
-                ? `This session is scoped to ${selectedRepo.owner}/${selectedRepo.repo}. Uploaded feedback, signal memory, plans, and implementation jobs stay under this repo.`
-                : "Choose a repo from the GitHub tab before uploading feedback. SignalGen will not create sessions or implementation work without an explicit repo."}
-            </p>
-
-            <label
-              className={`mt-6 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed p-6 text-center transition hover:border-[var(--rose)] hover:bg-[var(--primary)]/10 ${
-                isDragging ? "border-[var(--rose)] bg-[var(--primary)]/15" : "border-[var(--line-strong)] bg-[var(--primary)]/5"
-              }`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                const dropped = Array.from(e.dataTransfer.files);
-                setFiles(dropped.slice(0, 5));
-                if (dropped.length > 5) {
-                  setError("Please upload at most 5 screenshots per run. The first 5 were selected.");
-                }
-              }}
-            >
-              <span className="text-lg font-semibold">Drop or choose screenshots</span>
-              <span className="mt-2 text-sm text-[var(--ink-soft)]">PNG, JPG, or WebP comment screenshots</span>
-              <span className="mt-2 text-xs text-[var(--ink-faint)]">Max 5 screenshots · 4 MB each · 8 MB total</span>
-              <input
-                multiple
-                accept="image/png,image/jpeg,image/webp"
-                type="file"
-                className="sr-only"
-                onChange={(event) => {
-                  const selectedFiles = Array.from(event.target.files ?? []);
-                  setFiles(selectedFiles.slice(0, 5));
-                  if (selectedFiles.length > 5) {
-                    setError("Please upload at most 5 screenshots per run. The first 5 were selected.");
+          <section id="new-analysis-panel" role="tabpanel" aria-labelledby="new-analysis-tab" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <>
+              <LoopMap
+                stage={latestRun?.status ?? processingStage}
+                signalValue={selectedRepo ? Math.round((latestRun?.signal?.confidence ?? signals[0]?.confidence ?? 0) * 100) : 0}
+                runLabel={latestRun?._id ? `${selectedRepo?.repo ?? "Workspace"} · ${shortId(latestRun._id)}` : selectedRepo ? `${selectedRepo.repo} · ready` : "Choose a repo first"}
+                title={selectedRepo ? "Latest run · iteration loop" : "Iteration loop · choose a repo to activate"}
+                onNode={(key) => {
+                  if (!selectedRepo) {
+                    setDashboardTab("github");
+                    return;
+                  }
+                  if (key === "memory") {
+                    router.push(`/dashboard/memory?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`);
+                    return;
+                  }
+                  if (latestRun?._id) {
+                    router.push(`/dashboard/runs/${latestRun._id}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`);
                   }
                 }}
               />
-            </label>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                {selectedRepo ? (
+                  <Link className="sg-link" href={`/dashboard/memory?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`} style={{ fontSize: 13.5 }}>
+                    <Icon name="layers" size={14} /> Open full memory timeline <Icon name="arrow" size={14} />
+                  </Link>
+                ) : (
+                  <button className="sg-link" type="button" onClick={() => setDashboardTab("github")} style={{ fontSize: 13.5, background: "none", border: 0, fontFamily: "var(--sans)" }}>
+                    <Icon name="branch" size={14} /> Choose a repo first <Icon name="arrow" size={14} />
+                  </button>
+                )}
+              </div>
+              {!selectedRepo ? (
+                <EmptyRepoState
+                  title="Choose a repo first"
+                  body="SignalGen will not create sessions or implementation work without an explicit repo. Open the GitHub tab and choose a connected repository."
+                  action={<Button variant="ghost" size="sm" onClick={() => setDashboardTab("github")}>Open GitHub tab</Button>}
+                />
+              ) : null}
+            </>
 
-            <button
-              onClick={() => void createDemoRun()}
-              disabled={!selectedRepo || isCreating || isProcessing}
-              className="mt-3 text-xs text-[var(--rose-hover)] underline hover:text-[var(--rose-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Use sample feedback
-            </button>
-
-            <div>
-              <p className="mt-5 text-sm font-semibold text-[var(--ink)]">Or paste feedback comments</p>
-              <textarea
-                value={pastedText}
-                onChange={(event) => setPastedText(event.target.value)}
-                placeholder="Paste one comment per line…"
-                rows={4}
-                className="mt-2 w-full sg-panel sg-panel--cream px-4 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:outline-none focus:ring-1 focus:ring-[var(--rose)]"
+            <div className="dashboard-two-col" style={{ display: "grid", gridTemplateColumns: "minmax(0,0.9fr) minmax(0,1.1fr)", gap: 22 }}>
+              <UploadCard
+                selectedRepo={selectedRepo}
+                files={files}
+                fileNames={fileNames}
+                isDragging={isDragging}
+                isCreating={isCreating}
+                isProcessing={isProcessing}
+                pastedText={pastedText}
+                processingStage={processingStage}
+                onDraggingChange={setIsDragging}
+                onFiles={(nextFiles) => {
+                  const validation = validateDashboardScreenshotFiles(nextFiles);
+                  setFiles(validation.files);
+                  setError(validation.error);
+                }}
+                onCreateRun={() => void createRun()}
+                onCreateDemoRun={() => void createDemoRun()}
+                onPasteTextChange={setPastedText}
+                onCreatePasteRun={() => void createPasteRun()}
+                onGoGitHub={() => setDashboardTab("github")}
               />
-              <button
-                onClick={() => void createPasteRun()}
-                disabled={!selectedRepo || pastedText.trim() === "" || isCreating || isProcessing}
-                className="mt-3 sg-btn sg-btn--secondary sg-btn--sm"
-              >
-                Analyze pasted feedback
-              </button>
-            </div>
-
-            {fileNames.length > 0 ? (
-              <div className="mt-5 sg-panel sg-panel--cream p-4">
-                <p className="text-sm font-semibold text-[var(--ink)]">Selected screenshots</p>
-                <ul className="mt-3 space-y-2 text-sm text-[var(--ink-soft)]">
-                  {fileNames.map((name) => (
-                    <li key={name}>• {name}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <button
-              onClick={() => void createRun()}
-              disabled={!selectedRepo || isCreating || isProcessing || files.length === 0}
-              className="mt-6 w-full sg-btn sg-btn--primary"
-            >
-              {isProcessing ? "Agent is processing..." : isCreating ? "Extracting comments..." : "Upload and run agent"}
-            </button>
-          </div>
-
-          <div className="sg-card p-6">
-            <p className="sg-eyebrow">Latest signal</p>
-            {isLoading ? (
-              <p className="mt-5 text-[var(--ink-soft)]">Loading signals...</p>
-            ) : latestRun ? (
-              <div className="mt-5 space-y-5">
-                <div className="flex flex-col gap-3 sg-panel sg-panel--cream p-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-sm text-[var(--ink-faint)]">Top signal</p>
-                    <h2 className="mt-2 text-2xl font-semibold">{latestRun.signal?.title ?? "Pending analysis"}</h2>
-                    <p className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">{latestRun.signal?.summary ?? ""}</p>
-                  </div>
-                  <span className="sg-pill sg-pill--success">
-                    {Math.round((latestRun.signal?.confidence ?? 0) * 100)}%
-                  </span>
-                </div>
-
-                {latestRun.extractionDiagnostics ? (
-                  <div className="sg-panel sg-panel--cream px-4 py-3 text-xs text-[var(--ink-faint)]">
-                    Extracted from {latestRun.extractionDiagnostics.screenshotCount} screenshot{latestRun.extractionDiagnostics.screenshotCount !== 1 ? "s" : ""} · {latestRun.extractionDiagnostics.commentCount} comment{latestRun.extractionDiagnostics.commentCount !== 1 ? "s" : ""} found
-                  </div>
-                ) : null}
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <InfoCard title="Extracted comments" items={latestRun.comments ?? []} />
-                  <InfoCard title="Evidence" items={latestRun.signal?.evidence ?? []} />
-                  <InfoCard title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
-                  <InfoCard title="Guardrails" items={latestRun.plan?.guardrails ?? []} />
-                  <InfoCard title="Files to change" items={latestRun.plan?.filesToChange ?? []} />
-                  <InfoCard title="Acceptance criteria" items={latestRun.plan?.acceptanceCriteria ?? []} />
-                </div>
-
-                <div className="sg-panel sg-panel--cream p-5">
-                  <p className="text-sm text-[var(--ink-faint)]">Recommended product change</p>
-                  <p className="mt-2 text-[var(--ink)]">{latestRun.plan?.recommendedChange ?? "Awaiting agent analysis."}</p>
-                </div>
-
-                <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={decideRun} />
-                <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={runImplementationAction} />
-              </div>
-            ) : (
-              <p className="mt-5 text-[var(--ink-soft)]">
-                {selectedRepo ? "No signals yet for this repo. Upload feedback to create your first repo-scoped signal." : "Choose a repo first. Each repo has its own saved signal session."}
-              </p>
-            )}
-          </div>
-        </section>
-        ) : null}
-
-        {activeTab === "all-signals" ? (
-          <section
-            id="all-signals-panel"
-            role="tabpanel"
-            aria-labelledby="all-signals-tab"
-            className="sg-card p-6"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="sg-eyebrow">All signals</p>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ink-soft)]">
-                  {selectedRepo
-                    ? `Signals, evidence, and decisions saved for ${selectedRepo.owner}/${selectedRepo.repo}.`
-                    : "Choose a repo first. Signal memory is separated per repository."}
-                </p>
-              </div>
-              <span className="sg-pill sg-pill--outline">{signals.length} signals</span>
-            </div>
-
-            <div className="mt-6 overflow-hidden rounded-3xl border border-[var(--line)]">
-              {signals.length > 0 ? (
-                <div className="divide-y divide-[var(--line)]">
-                  {signals.map((signal) => {
-                    const signalEvidenceItemIds = signal.evidenceItemIds ?? [];
-                    return (
-                      <button
-                        key={signal._id}
-                        type="button"
-                        onClick={() => setSelectedSignalId(signal._id)}
-                        className="grid w-full gap-3 bg-[var(--card)] p-4 text-left transition hover:bg-[var(--primary)]/10 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--rose)] md:grid-cols-[1fr_1.3fr_0.7fr] md:items-center"
-                      >
-                        <div>
-                          <p className="font-semibold">{signal.title}</p>
-                          <p className="mt-1 text-xs text-[var(--ink-faint)]">
-                            {formatSignalLabel(signal.type)} · {signalEvidenceItemIds.length} evidence item{signalEvidenceItemIds.length !== 1 ? "s" : ""} · {formatSignalDate(signal.updatedAt)}
-                          </p>
-                          <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">{signal.summary}</p>
-                        </div>
-                        <p className="text-sm text-[var(--ink-soft)]">
-                          {signal.currentPlan?.recommendedChange ?? "Signal is still collecting evidence before a plan is proposed."}
-                        </p>
-                        <div className="flex flex-col items-start gap-2 md:items-end">
-                          <span className="rounded-full bg-[var(--primary)]/10 px-3 py-1 text-sm text-[var(--rose)]">{formatSignalLabel(signal.status)}</span>
-                          <span className="text-xs text-[var(--ink-faint)]">
-                            Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}
-                          </span>
-                          <span className="text-xs font-semibold text-[var(--rose)]">View details →</span>
-                          {signal.currentPlan?.approvalDecision ? (
-                            <span className="text-xs text-[var(--ink-faint)]">
-                              Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {formatSignalDate(signal.currentPlan.approvalDecision.decidedAt)}
-                            </span>
-                          ) : signal.status === "plan_ready" && signal.currentPlan ? (
-                            <span className="text-xs text-[var(--warning)]">Plan awaiting founder decision</span>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="p-5 text-[var(--ink-soft)]">{selectedRepo ? "No signals yet for this repo." : "Choose a repo first. Each repo has its own signal memory."}</p>
-              )}
+              <LatestSignalPanel
+                latestRun={latestRun}
+                selectedRepo={selectedRepo}
+                isLoading={isLoading}
+                isCreating={isCreating}
+                isProcessing={isProcessing}
+                latestSignalEvidence={latestSignalEvidence}
+                decidingRunId={decidingRunId}
+                implementingRunId={implementingRunId}
+                onDecide={decideRun}
+                onRunAction={runImplementationAction}
+                onOpenRun={(runId) => router.push(`/dashboard/runs/${runId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`)}
+                onGoGitHub={() => setDashboardTab("github")}
+              />
             </div>
           </section>
         ) : null}
 
+        {activeTab === "all-signals" ? (
+          <section id="all-signals-panel" role="tabpanel" aria-labelledby="all-signals-tab">
+            <AllSignalsPanel
+              selectedRepo={selectedRepo}
+              signals={signals}
+              filteredSignals={filteredSignals}
+              query={signalQuery}
+              filter={signalFilter}
+              isLoading={isLoading}
+              onQueryChange={setSignalQuery}
+              onFilterChange={setSignalFilter}
+              onOpenSignal={(signalId) => setSelectedSignalId(signalId)}
+              onGoGitHub={() => setDashboardTab("github")}
+            />
+          </section>
+        ) : null}
+
         {activeTab === "github" ? (
-          <section
-            id="github-panel"
-            role="tabpanel"
-            aria-labelledby="github-tab"
-            className="sg-card p-6"
-          >
+          <section id="github-panel" role="tabpanel" aria-labelledby="github-tab">
             <GitHubPanel
               githubStatus={githubStatus}
               selectedRepoConnectionId={selectedRepoConnectionId}
@@ -664,7 +624,7 @@ export default function DashboardPage() {
                 window.localStorage.setItem("signalgen:selectedRepoConnectionId", connection._id);
                 setSelectedRepoConnectionId(connection._id);
                 setActiveTab("new-analysis");
-                router.replace(`/dashboard?repoConnectionId=${encodeURIComponent(connection._id)}`);
+                replaceDashboardUrl({ repoConnectionId: connection._id, tab: "new-analysis" });
               }}
               onRepoSelected={loadGitHubStatus}
             />
@@ -681,159 +641,390 @@ export default function DashboardPage() {
   );
 }
 
-function SignalDetailDrawer({
-  signal,
-  signals,
-  onSelectSignal,
-  onClose,
+function DashboardHeader({ selectedRepo, onRefresh }: { selectedRepo?: RepoConnection; onRefresh: () => void }) {
+  return (
+    <header style={{ marginBottom: 2 }}>
+      <Link href="/" className="sg-link" style={{ display: "inline-flex", marginBottom: 18, fontSize: 14.5 }}>
+        <Icon name="arrowL" size={16} /> SignalGen home
+      </Link>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
+        <div>
+          <h1 className="sg-display" style={{ fontSize: "clamp(34px,4vw,50px)", lineHeight: 0.98, margin: 0 }}>
+            Founder signal dashboard
+          </h1>
+          <p style={{ maxWidth: 760, color: "var(--ink-soft)", marginTop: 14, fontSize: 17, lineHeight: 1.55 }}>
+            {selectedRepo
+              ? `Current repo: ${selectedRepo.owner}/${selectedRepo.repo}. Sessions, signals, decisions, and PR work stay scoped to this workspace.`
+              : "Choose one connected repo before creating signals, sessions, or PR work."}
+          </p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <ThemeMenu />
+          <Button variant="ghost" size="lg" onClick={onRefresh} leftIcon={<Icon name="refresh" size={17} />}>
+            Refresh
+          </Button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function EmptyRepoState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+  return (
+    <Card className="sg-grid-bg" style={{ padding: "48px 32px", textAlign: "center" }}>
+      <span style={{ width: 54, height: 54, borderRadius: 15, display: "grid", placeItems: "center", margin: "0 auto 16px", background: "var(--inset)", color: "var(--ink-faint)", border: "1px dashed var(--line-2)" }}>
+        <Icon name="branch" size={24} />
+      </span>
+      <h3 style={{ fontSize: 19, fontWeight: 800, marginBottom: 8 }}>{title}</h3>
+      <p style={{ color: "var(--ink-soft)", fontSize: 14.5, maxWidth: 460, margin: "0 auto", lineHeight: 1.55 }}>{body}</p>
+      {action ? <div style={{ marginTop: 18, display: "flex", justifyContent: "center" }}>{action}</div> : null}
+    </Card>
+  );
+}
+
+function UploadCard({
+  selectedRepo,
+  files,
+  fileNames,
+  isDragging,
+  isCreating,
+  isProcessing,
+  pastedText,
+  processingStage,
+  onDraggingChange,
+  onFiles,
+  onCreateRun,
+  onCreateDemoRun,
+  onPasteTextChange,
+  onCreatePasteRun,
+  onGoGitHub,
 }: {
-  signal: ApiSignal | null;
-  signals: ApiSignal[];
-  onSelectSignal: (signalId: string) => void;
-  onClose: () => void;
+  selectedRepo?: RepoConnection;
+  files: File[];
+  fileNames: string[];
+  isDragging: boolean;
+  isCreating: boolean;
+  isProcessing: boolean;
+  pastedText: string;
+  processingStage: number;
+  onDraggingChange: (dragging: boolean) => void;
+  onFiles: (files: File[]) => void;
+  onCreateRun: () => void;
+  onCreateDemoRun: () => void;
+  onPasteTextChange: (value: string) => void;
+  onCreatePasteRun: () => void;
+  onGoGitHub: () => void;
 }) {
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+  const busy = isCreating || isProcessing;
+  return (
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <Eyebrow>New analysis</Eyebrow>
+      <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>Upload screenshots</h2>
+      <p style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55, marginBottom: 18 }}>
+        {selectedRepo
+          ? `Drop Xiaohongshu, Instagram, Reddit, or app-review screenshots. This session is scoped to ${selectedRepo.owner}/${selectedRepo.repo}.`
+          : "Choose a repo from the GitHub tab before uploading feedback. SignalGen will not create sessions without an explicit repo."}
+      </p>
 
-  useEffect(() => {
-    if (!signal) return;
-    previouslyFocusedElement.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButtonRef.current?.focus();
+      {selectedRepo ? (
+        <>
+          {!isProcessing ? (
+            <label
+              style={{
+                width: "100%",
+                minHeight: 184,
+                border: "1.6px dashed var(--line-2)",
+                background: isDragging ? "var(--signal-soft)" : "var(--inset)",
+                borderColor: isDragging ? "var(--signal)" : "var(--line-2)",
+                borderRadius: "var(--rad)",
+                padding: "34px 20px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: ".18s",
+                color: "var(--ink)",
+                display: "grid",
+                placeItems: "center",
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                onDraggingChange(true);
+              }}
+              onDragLeave={() => onDraggingChange(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                onDraggingChange(false);
+                onFiles(Array.from(event.dataTransfer.files));
+              }}
+            >
+              <span>
+                <span style={{ display: "grid", placeItems: "center", width: 46, height: 46, borderRadius: 13, background: "var(--node-bg)", color: "var(--signal)", margin: "0 auto 12px", boxShadow: "var(--shadow-card)" }}>
+                  <Icon name="upload" size={22} />
+                </span>
+                <span style={{ display: "block", fontSize: 17, fontWeight: 800 }}>Drop or choose screenshots</span>
+                <span className="sg-meta" style={{ display: "block", marginTop: 6 }}>PNG, JPG, or WebP · Max 5 · 4 MB each · 8 MB total</span>
+              </span>
+              <input
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                type="file"
+                className="sr-only"
+                onChange={(event) => onFiles(Array.from(event.target.files ?? []))}
+              />
+            </label>
+          ) : (
+            <Panel style={{ padding: 22, borderColor: "var(--signal)" }}>
+              <Eyebrow>Detecting signal…</Eyebrow>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 18px" }}>
+                {PROCESSING_COMMENTS.slice(0, Math.min(PROCESSING_COMMENTS.length, processingStage + 1)).map((comment, index) => (
+                  <div key={comment} className="sg-tune" style={{ fontSize: 13.5, padding: "8px 12px", borderRadius: 10, background: "var(--signal-soft)", borderLeft: "2px solid var(--signal)", color: "var(--ink)", animationDelay: `${index * 60}ms` }}>
+                    {comment}
+                  </div>
+                ))}
+              </div>
+              <PipelineStrip current={Math.min(3, processingStage)} stages={SG_STAGES.slice(0, 4)} />
+            </Panel>
+          )}
 
-    return () => {
-      previouslyFocusedElement.current?.focus();
-      previouslyFocusedElement.current = null;
-    };
-  }, [signal]);
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}>
+            <button className="sg-link" onClick={onCreateDemoRun} disabled={busy} style={{ background: "none", border: "none", fontFamily: "var(--sans)", fontSize: 14, opacity: busy ? 0.5 : 1 }}>
+              <Icon name="spark" size={13} /> Use sample feedback
+            </button>
+            <Button variant="signal" size="sm" onClick={onCreateRun} disabled={busy || files.length === 0} loading={isCreating && files.length > 0}>
+              {isProcessing ? "Agent is processing..." : isCreating ? "Extracting comments..." : "Upload and run agent"}
+            </Button>
+          </div>
 
-  if (!signal) return null;
+          <Field label="Or paste feedback comments" hint="One comment per line. This keeps the same JSON /api/runs creation path.">
+            <Textarea
+              value={pastedText}
+              onChange={(event) => onPasteTextChange(event.target.value)}
+              placeholder="Paste one comment per line…"
+              rows={4}
+              style={{ marginTop: 10 }}
+            />
+          </Field>
+          <Button variant="ghost" size="sm" onClick={onCreatePasteRun} disabled={busy || pastedText.trim() === ""} style={{ marginTop: 12 }}>
+            Analyze pasted feedback
+          </Button>
 
-  const evidenceItems = signal.evidenceItems ?? [];
-  const evidenceItemIds = signal.evidenceItemIds ?? [];
-  const evidenceReferenceCount = evidenceItemIds.length;
-  const otherSignals = signals.filter((otherSignal) => otherSignal._id !== signal._id);
-  const plan = signal.currentPlan;
-  const decision = plan?.approvalDecision;
+          {fileNames.length > 0 ? (
+            <Panel style={{ marginTop: 16, padding: 16 }}>
+              <Eyebrow soft>Selected screenshots</Eyebrow>
+              <ul style={{ margin: "12px 0 0", paddingLeft: 18, color: "var(--ink-soft)", fontSize: 14, lineHeight: 1.7 }}>
+                {fileNames.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+        </>
+      ) : (
+        <EmptyRepoState title="Choose a repo first" body="Uploads and sample feedback are disabled until you choose a connected repository." action={<Button variant="ghost" size="sm" onClick={onGoGitHub}>Open GitHub tab</Button>} />
+      )}
+    </Card>
+  );
+}
+
+function LatestSignalPanel({
+  latestRun,
+  selectedRepo,
+  isLoading,
+  isCreating,
+  isProcessing,
+  latestSignalEvidence,
+  decidingRunId,
+  implementingRunId,
+  onDecide,
+  onRunAction,
+  onOpenRun,
+  onGoGitHub,
+}: {
+  latestRun?: ApiRun;
+  selectedRepo?: RepoConnection;
+  isLoading: boolean;
+  isCreating: boolean;
+  isProcessing: boolean;
+  latestSignalEvidence: NonNullable<ApiRun["evidenceItems"]>;
+  decidingRunId: string | null;
+  implementingRunId: string | null;
+  onDecide: (runId: string, action: "approve" | "reject") => Promise<void>;
+  onRunAction: (runId: string, action: "start" | "prepare-pr") => Promise<void>;
+  onOpenRun: (runId: string) => void;
+  onGoGitHub: () => void;
+}) {
+  return (
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
+        <Eyebrow>Latest signal</Eyebrow>
+        {isCreating || isProcessing ? <Pill variant="signal" dot>Running</Pill> : latestRun ? <Pill variant="success" dot>Repo scoped</Pill> : null}
+      </div>
+
+      {!selectedRepo ? (
+        <EmptyRepoState title="Choose a repo first" body="Each repo has its own saved signal session. Pick a GitHub workspace before reviewing latest signals." action={<Button variant="ghost" size="sm" onClick={onGoGitHub}>Open GitHub tab</Button>} />
+      ) : isLoading ? (
+        <Panel style={{ padding: 20 }}>Loading signals...</Panel>
+      ) : latestRun ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+            <Gauge value={latestRun.signal?.confidence ?? 0} size={88} stroke={9} label="confidence" sub="signal" />
+            <div>
+              <Pill variant={runStatusVariant(latestRun.status)}>{formatSignalLabel(latestRun.status)}</Pill>
+              <h3 style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.15, margin: "10px 0 8px" }}>{latestRun.signal?.title ?? "Pending analysis"}</h3>
+              <p style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55 }}>{latestRun.signal?.summary ?? ""}</p>
+            </div>
+          </div>
+
+          {latestRun.extractionDiagnostics ? (
+            <Panel style={{ padding: 14 }}>
+              <Eyebrow soft>Extraction</Eyebrow>
+              <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>
+                Extracted from {latestRun.extractionDiagnostics.screenshotCount} screenshot{latestRun.extractionDiagnostics.screenshotCount !== 1 ? "s" : ""} · {latestRun.extractionDiagnostics.commentCount} comment{latestRun.extractionDiagnostics.commentCount !== 1 ? "s" : ""} found
+              </p>
+            </Panel>
+          ) : null}
+
+          <Panel style={{ padding: 14 }}>
+            <Eyebrow soft>Top evidence</Eyebrow>
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              {latestSignalEvidence.length > 0
+                ? latestSignalEvidence.map((item, index) => <Evidence key={item.id} e={{ ...item, comment: item.summary }} i={index} />)
+                : (latestRun.signal?.evidence ?? []).map((quote, index) => <Evidence key={quote} quote={quote} confidence={latestRun.signal?.confidence ?? 0} i={index} />)}
+            </div>
+          </Panel>
+
+          <div className="dashboard-metric-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
+            <MetricTile label="Comments" value={latestRun.comments?.length ?? 0} />
+            <MetricTile label="Clusters" value={latestRun.signalClusters?.length ?? 0} />
+            <MetricTile label="Files" value={latestRun.plan?.filesToChange?.length ?? 0} />
+          </div>
+
+          <InfoGrid title="Agent rationale" items={(latestRun.signalClusters ?? []).map((cluster) => cluster.rationale)} />
+          <InfoGrid title="Guardrails" items={latestRun.plan?.guardrails ?? []} />
+          <InfoGrid title="Files to change" items={latestRun.plan?.filesToChange ?? []} />
+          <InfoGrid title="Acceptance criteria" items={latestRun.plan?.acceptanceCriteria ?? []} />
+
+          <Panel style={{ padding: 16 }}>
+            <Eyebrow soft>Recommended product change</Eyebrow>
+            <p style={{ margin: "8px 0 0", color: "var(--ink)", lineHeight: 1.55 }}>{latestRun.plan?.recommendedChange ?? "Awaiting agent analysis."}</p>
+          </Panel>
+
+          <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={onDecide} />
+          <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={onRunAction} />
+          <Button variant="signal" block onClick={() => onOpenRun(latestRun._id)} rightIcon={<Icon name="arrow" size={16} />}>
+            Open run detail
+          </Button>
+        </div>
+      ) : (
+        <EmptyRepoState title="No signals yet" body="No signals yet for this repo. Upload feedback or use sample feedback to create your first repo-scoped signal." />
+      )}
+    </Card>
+  );
+}
+
+function AllSignalsPanel({
+  selectedRepo,
+  signals,
+  filteredSignals,
+  query,
+  filter,
+  isLoading,
+  onQueryChange,
+  onFilterChange,
+  onOpenSignal,
+  onGoGitHub,
+}: {
+  selectedRepo?: RepoConnection;
+  signals: ApiSignal[];
+  filteredSignals: ApiSignal[];
+  query: string;
+  filter: SignalFilter;
+  isLoading: boolean;
+  onQueryChange: (value: string) => void;
+  onFilterChange: (value: SignalFilter) => void;
+  onOpenSignal: (signalId: string) => void;
+  onGoGitHub: () => void;
+}) {
+  if (!selectedRepo) {
+    return <EmptyRepoState title="Choose a repo first" body="Signal memory is separated per repository. Open the GitHub tab and choose a connected repo to view its signals." action={<Button variant="ghost" size="sm" onClick={onGoGitHub}>Open GitHub tab</Button>} />;
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--bg-alt)] backdrop-blur-sm" aria-label="Signal detail overlay">
-      <button type="button" aria-label="Close signal detail backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="signal-detail-title"
-        className="relative h-full w-full max-w-2xl overflow-y-auto border-l border-[var(--line)] bg-[var(--bg)] p-6 text-[var(--ink)] shadow-2xl shadow-[rgba(122,59,78,0.14)] sm:p-8"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="sg-eyebrow">Signal detail</p>
-            <h2 id="signal-detail-title" className="mt-3 text-3xl font-semibold tracking-tight">
-              {signal.title || "Untitled signal"}
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">{signal.summary || "Signal summary is not available yet."}</p>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            className="sg-btn sg-btn--soft sg-btn--sm"
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <SignalDetailMetric label="Type" value={formatSignalLabel(signal.type)} />
-          <SignalDetailMetric label="Status" value={formatSignalLabel(signal.status)} />
-          <SignalDetailMetric label="Evidence" value={`${evidenceReferenceCount} item${evidenceReferenceCount === 1 ? "" : "s"}`} />
-          <SignalDetailMetric label="Strength" value={formatSignalPercent(signal.strength)} />
-          <SignalDetailMetric label="Confidence" value={formatSignalPercent(signal.confidence)} />
-          <SignalDetailMetric label="Updated" value={formatSignalDate(signal.updatedAt)} />
-          <SignalDetailMetric label="Created" value={formatSignalDate(signal.createdAt)} />
-        </div>
-
-        <section className="mt-8 sg-card p-5">
-          <p className="sg-eyebrow">Evidence</p>
-          {evidenceItems.length > 0 ? (
-            <div className="mt-4 space-y-4">
-              {evidenceItems.map((item) => (
-                <article key={item.id} className="sg-panel sg-panel--cream p-4">
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full bg-[var(--primary)]/10 px-3 py-1 text-xs font-semibold text-[var(--rose)]">{formatSignalLabel(item.clusterType)}</span>
-                    <span className="sg-pill sg-pill--outline">Severity: {formatSignalLabel(item.severity)}</span>
-                    <span className="sg-pill sg-pill--outline">Decision: {formatSignalLabel(item.decision)}</span>
-                  </div>
-                  <h3 className="mt-4 text-lg font-semibold">{item.title || "Evidence item"}</h3>
-                  <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">{item.summary || "No evidence summary saved yet."}</p>
-                  <dl className="mt-4 grid gap-3 text-xs text-[var(--ink-faint)] sm:grid-cols-3">
-                    <SignalDetailInlineMetric label="Frequency" value={String(item.frequency ?? 0)} />
-                    <SignalDetailInlineMetric label="Confidence" value={formatSignalPercent(item.confidence)} />
-                    <SignalDetailInlineMetric label="Source run" value={item.runId || "Not linked"} />
-                  </dl>
-                </article>
-              ))}
-            </div>
-          ) : evidenceReferenceCount > 0 ? (
-            <div className="mt-4 sg-panel sg-panel--cream p-4 text-sm leading-6 text-[var(--ink-soft)]">
-              <p>Evidence references saved, but detailed evidence text is not available in this view yet.</p>
-              <p className="mt-2 text-xs text-[var(--ink-faint)]">References: {evidenceItemIds.join(", ")}</p>
-            </div>
-          ) : (
-            <p className="mt-4 sg-panel sg-panel--cream p-4 text-sm text-[var(--ink-faint)]">No evidence has been saved for this signal yet.</p>
-          )}
-        </section>
-
-        <section className="mt-6 sg-card p-5">
-          <p className="sg-eyebrow">Recommended next step</p>
-          <p className="mt-3 text-sm leading-6 text-[var(--ink)]">
-            {plan?.recommendedChange ?? "Signal is still collecting evidence before a next step is proposed."}
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
+        <div>
+          <Eyebrow>All signals · {selectedRepo.owner}/{selectedRepo.repo}</Eyebrow>
+          <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", lineHeight: 1.55, fontSize: 14 }}>
+            Signals, evidence, and decisions saved for this connected repository.
           </p>
-          {plan ? (
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <SignalDetailList title="Files to change" items={plan.filesToChange} />
-              <SignalDetailList title="Guardrails" items={plan.guardrails} />
-              <SignalDetailList title="Acceptance criteria" items={plan.acceptanceCriteria} />
-            </div>
-          ) : null}
-        </section>
+        </div>
+        <Pill variant="outline">{filteredSignals.length} of {signals.length} signals</Pill>
+      </div>
 
-        <section className="mt-6 sg-card p-5">
-          <p className="sg-eyebrow">Decision memory</p>
-          {decision ? (
-            <div className="mt-3 text-sm leading-6 text-[var(--ink)]">
-              <p>Founder {decision.action === "approve" ? "approved" : "rejected"} this plan on {formatSignalDate(decision.decidedAt)}.</p>
-              {decision.note ? <p className="mt-2 text-[var(--ink-soft)]">“{decision.note}”</p> : null}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm leading-6 text-[var(--ink-faint)]">No founder decision has been recorded for this signal yet.</p>
-          )}
-        </section>
+      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+        <Input aria-label="Search signals" placeholder="Search signals…" value={query} onChange={(event) => onQueryChange(event.target.value)} style={{ maxWidth: 280 }} />
+        <div role="group" aria-label="Filter signals" style={{ display: "flex", gap: 8, overflowX: "auto", maxWidth: "100%" }}>
+          {SIGNAL_FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="sg-tab"
+              aria-pressed={filter === item.id}
+              onClick={() => onFilterChange(item.id)}
+              style={{ padding: "10px 17px", fontSize: 13.5, whiteSpace: "nowrap", background: filter === item.id ? "var(--signal)" : undefined, color: filter === item.id ? "#071014" : undefined }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {otherSignals.length > 0 ? (
-          <section className="mt-6 sg-card p-5">
-            <p className="sg-eyebrow">Other signals</p>
-            <p className="mt-2 text-sm leading-6 text-[var(--ink-faint)]">
-              Select another saved signal without leaving this detail drawer.
-            </p>
-            <div className="mt-4 space-y-2">
-              {otherSignals.map((otherSignal) => (
-                <button
-                  key={otherSignal._id}
-                  type="button"
-                  onClick={() => onSelectSignal(otherSignal._id)}
-                  className="w-full sg-panel sg-panel--cream p-3 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--primary)]/10 focus:outline-none focus:ring-2 focus:ring-[var(--rose)]"
-                >
-                  <span className="font-semibold">{otherSignal.title || "Untitled signal"}</span>
-                  <span className="mt-1 block text-xs text-[var(--ink-faint)]">
-                    {formatSignalLabel(otherSignal.status)} · {formatSignalDate(otherSignal.updatedAt)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
+      {isLoading ? (
+        <Panel style={{ padding: 20 }}>Loading signals...</Panel>
+      ) : filteredSignals.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {filteredSignals.map((signal) => (
+            <SignalRow key={signal._id} signal={signal} onOpenSignal={onOpenSignal} />
+          ))}
+        </div>
+      ) : signals.length > 0 ? (
+        <Panel style={{ padding: 40, textAlign: "center", color: "var(--ink-faint)" }}>No signals match your search.</Panel>
+      ) : (
+        <Panel style={{ padding: 40, textAlign: "center", color: "var(--ink-soft)" }}>No signals yet for this repo.</Panel>
+      )}
+    </Card>
+  );
+}
+
+function SignalRow({ signal, onOpenSignal }: { signal: ApiSignal; onOpenSignal: (signalId: string) => void }) {
+  const evidenceItemIds = signal.evidenceItemIds ?? [];
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenSignal(signal._id)}
+      className="sg-row"
+      style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "left", cursor: "pointer", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "var(--rad)", padding: "14px 16px", transition: ".16s", fontFamily: "var(--sans)", color: "var(--ink)", width: "100%" }}
+    >
+      <Gauge value={signal.confidence ?? 0} size={48} stroke={5} label="confidence" sub="" animate={false} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 4 }}>{signal.title || "Untitled signal"}</div>
+        <div style={{ fontSize: 13, color: "var(--ink-soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{signal.summary || "No summary saved yet."}</div>
+        <div className="sg-meta" style={{ marginTop: 6 }}>{evidenceItemIds.length} evidence item{evidenceItemIds.length !== 1 ? "s" : ""} · updated {formatSignalDate(signal.updatedAt)}</div>
+      </div>
+      <div className="signal-row-meta" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <Pill variant={signalTypeVariant(signal.type)}>{formatSignalLabel(signal.type)}</Pill>
+          <Pill variant={signalStatusVariant(signal.status)} dot>{formatSignalLabel(signal.status)}</Pill>
+        </div>
+        <span className="sg-meta">Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}</span>
+        {signal.currentPlan?.approvalDecision ? (
+          <span className="sg-meta">Founder {signal.currentPlan.approvalDecision.action === "approve" ? "approved" : "rejected"} · {formatSignalDate(signal.currentPlan.approvalDecision.decidedAt)}</span>
+        ) : signal.status === "plan_ready" && signal.currentPlan ? (
+          <span style={{ color: "var(--warning)", fontSize: 12 }}>Plan awaiting founder decision</span>
         ) : null}
-      </aside>
-    </div>
+        <span className="sg-meta">View details</span>
+      </div>
+      <span style={{ color: "var(--ink-faint)" }}><Icon name="arrow" size={18} /></span>
+    </button>
   );
 }
 
@@ -896,79 +1087,54 @@ function GitHubPanel({
   }
 
   if (githubStatus.status === "loading") {
-    return <p className="text-[var(--ink-soft)]">Loading GitHub connection status...</p>;
+    return <Card style={{ padding: "var(--pad-card)" }}>Loading GitHub connection status...</Card>;
   }
 
   if (githubStatus.status === "error") {
-    return <p className="rounded-3xl border border-[var(--error-line)] bg-[var(--error-bg)] p-4 text-[var(--error)]">{githubStatus.message}</p>;
+    return <Panel role="alert" style={{ borderColor: "var(--error-line)", background: "var(--error-bg)", color: "var(--error)", padding: 18 }}>{githubStatus.message}</Panel>;
   }
 
   if (githubStatus.status === "disconnected") {
     return (
-      <div>
-        <p className="sg-eyebrow">GitHub</p>
-        <h2 className="mt-3 text-2xl font-semibold">GitHub is not connected.</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ink-soft)]">
+      <Card style={{ padding: "var(--pad-card)" }}>
+        <Eyebrow>GitHub</Eyebrow>
+        <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>GitHub is not connected.</h2>
+        <p style={{ maxWidth: 720, fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55 }}>
           Connect the GitHub App so SignalGen can remember which product repository belongs to this workspace.
         </p>
-        <a
-          href="/api/github/install"
-          className="mt-5 inline-flex rounded-full bg-[var(--primary)] px-5 py-3 text-sm font-semibold text-[var(--primary-ink)] transition hover:bg-[var(--primary-hover)]"
-        >
+        <a href="/api/github/install" className="sg-btn sg-btn--signal" style={{ display: "inline-flex", marginTop: 18 }}>
           Connect GitHub App
         </a>
-      </div>
+      </Card>
     );
   }
 
   if (githubStatus.status === "installed") {
     return (
-      <div>
-        <p className="sg-eyebrow">GitHub</p>
-        <h2 className="mt-3 text-2xl font-semibold">GitHub App installed. Select a repository to connect.</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ink-soft)]">
+      <Card style={{ padding: "var(--pad-card)" }}>
+        <Eyebrow>GitHub</Eyebrow>
+        <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>GitHub App installed. Select a repository to connect.</h2>
+        <p style={{ maxWidth: 720, fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55 }}>
           Repo write capabilities remain disabled until all implementation gates are active.
         </p>
-        <form onSubmit={(event) => void submitRepoSelection(event)} className="mt-6 grid gap-4 md:grid-cols-3">
-          <label className="text-sm font-semibold text-[var(--ink)]">
-            Owner
-            <input
-              value={owner}
-              onChange={(event) => setOwner(event.target.value)}
-              className="mt-2 w-full sg-panel sg-panel--cream px-4 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:outline-none focus:ring-1 focus:ring-[var(--rose)]"
-              placeholder="viviannnl"
-            />
-          </label>
-          <label className="text-sm font-semibold text-[var(--ink)]">
-            Repo
-            <input
-              value={repo}
-              onChange={(event) => setRepo(event.target.value)}
-              className="mt-2 w-full sg-panel sg-panel--cream px-4 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:outline-none focus:ring-1 focus:ring-[var(--rose)]"
-              placeholder="SignalGen"
-            />
-          </label>
-          <label className="text-sm font-semibold text-[var(--ink)]">
-            Default branch
-            <input
-              value={defaultBranch}
-              onChange={(event) => setDefaultBranch(event.target.value)}
-              className="mt-2 w-full sg-panel sg-panel--cream px-4 py-3 text-sm text-[var(--ink)] placeholder:text-[var(--ink-faint)] focus:outline-none focus:ring-1 focus:ring-[var(--rose)]"
-              placeholder="main"
-            />
-          </label>
-          <div className="md:col-span-3">
-            <button
-              type="submit"
-              disabled={isSubmitting || owner.trim() === "" || repo.trim() === "" || defaultBranch.trim() === ""}
-              className="sg-btn sg-btn--primary"
-            >
+        <form onSubmit={(event) => void submitRepoSelection(event)} style={{ marginTop: 22, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 16 }} className="github-connect-grid">
+          <Field label="Owner">
+            <Input value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="viviannnl" />
+          </Field>
+          <Field label="Repo">
+            <Input value={repo} onChange={(event) => setRepo(event.target.value)} placeholder="SignalGen" />
+          </Field>
+          <Field label="Default branch">
+            <Input value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} placeholder="main" />
+          </Field>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Button type="submit" variant="signal" disabled={isSubmitting || owner.trim() === "" || repo.trim() === "" || defaultBranch.trim() === ""} loading={isSubmitting}>
               {isSubmitting ? "Connecting repo..." : "Connect repository"}
-            </button>
-            {submitError ? <p className="mt-3 text-sm text-[var(--error)]">{submitError}</p> : null}
+            </Button>
+            {submitError ? <p style={{ marginTop: 12, color: "var(--error)", fontSize: 14 }}>{submitError}</p> : null}
           </div>
         </form>
-      </div>
+      </Card>
     );
   }
 
@@ -982,42 +1148,198 @@ function GitHubPanel({
   const enabledForIssues = connectedRepos.filter((connection) => connection.capabilities.issue_creation);
 
   return (
-    <div>
-      <p className="sg-eyebrow">GitHub</p>
-      <h2 className="mt-3 text-2xl font-semibold">Connected repositories</h2>
-      <p className="mt-3 text-sm leading-6 text-[var(--ink-soft)]">
-        Choose one repo to open its workspace. Connected repos are account-level access; sessions, signals, decisions, and PR work are repo-scoped.
-        {" "}{enabledForDraftPrs.length} of {connectedRepos.length} repos can receive SignalGen branches, commits, and draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
+    <Card style={{ padding: "var(--pad-card)" }}>
+      <Eyebrow>GitHub</Eyebrow>
+      <h2 className="sg-display" style={{ fontSize: 24, margin: "8px 0" }}>Connected repositories</h2>
+      <p style={{ fontSize: 14, color: "var(--ink-soft)", lineHeight: 1.55, marginBottom: 22, maxWidth: 820 }}>
+        Choose one repo to open its workspace. Connected repos are account-level access; sessions, signals, decisions, and PR work are repo-scoped. {enabledForDraftPrs.length} of {connectedRepos.length} repos can receive SignalGen branches, commits, and draft PRs. Issue creation is enabled for {enabledForIssues.length} of {connectedRepos.length} repos.
       </p>
-      <div className="mt-5 grid gap-3">
+      <div style={{ display: "grid", gap: 14 }}>
         {connectedRepos.map((connection) => {
           const canCreateDraftPr = connection.capabilities.branch_push && connection.capabilities.pr_creation;
           const isActive = connection._id === selectedRepoConnectionId;
           return (
-            <div
-              key={connection._id ?? `${connection.owner}/${connection.repo}`}
-              className="grid gap-3 sg-panel sg-panel--cream p-5 text-sm text-[var(--ink-soft)] md:grid-cols-2"
-            >
-              <p>Owner: {connection.owner}</p>
-              <p>Repo: {connection.repo}</p>
-              <p>Default branch: {connection.defaultBranch}</p>
-              <p>Installation ID: {githubStatus.installationId}</p>
-              <p className={canCreateDraftPr ? "text-[var(--success)]" : "text-[var(--warning)]"}>
-                Draft PR automation: {canCreateDraftPr ? "Enabled" : "Disabled"}
-              </p>
-              <p>Issues: {connection.capabilities.issue_creation ? "Enabled" : "Disabled"}</p>
-              <button
-                type="button"
-                onClick={() => onActiveRepoSelected(connection)}
-                disabled={!connection._id || isActive}
-                className="sg-btn sg-btn--primary sg-btn--sm md:col-span-2"
-              >
+            <Panel key={connection._id ?? `${connection.owner}/${connection.repo}`} className="sg-ticked" style={{ padding: 22, borderColor: isActive ? "var(--success-line)" : "var(--line)" }}>
+              <div className="github-repo-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 32px", marginBottom: 18 }}>
+                <RepoFact label="Owner" value={connection.owner} />
+                <RepoFact label="Repo" value={connection.repo} />
+                <RepoFact label="Default branch" value={connection.defaultBranch} />
+                <RepoFact label="Installation ID" value={connection.installationId ?? githubStatus.installationId} />
+                <RepoFact label="Draft PR automation" value={canCreateDraftPr ? "Enabled" : "Disabled"} tone={canCreateDraftPr ? "success" : "warning"} />
+                <RepoFact label="Issues" value={connection.capabilities.issue_creation ? "Enabled" : "Disabled"} tone={connection.capabilities.issue_creation ? "success" : "muted"} />
+              </div>
+              <Button type="button" variant="signal" size="sm" onClick={() => onActiveRepoSelected(connection)} disabled={!connection._id || isActive}>
                 {isActive ? "Current repo workspace" : "Open workspace"}
-              </button>
-            </div>
+              </Button>
+            </Panel>
           );
         })}
       </div>
+    </Card>
+  );
+}
+
+function RepoFact({ label, value, tone = "muted" }: { label: string; value: string; tone?: "success" | "warning" | "muted" }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, borderBottom: "1px solid var(--line)", paddingBottom: 8 }}>
+      <span className="sg-meta">{label}</span>
+      <span style={{ color: tone === "success" ? "var(--success)" : tone === "warning" ? "var(--warning)" : "var(--ink)", fontWeight: 700 }}>{value}</span>
+    </div>
+  );
+}
+
+function SignalDetailDrawer({
+  signal,
+  signals,
+  onSelectSignal,
+  onClose,
+}: {
+  signal: ApiSignal | null;
+  signals: ApiSignal[];
+  onSelectSignal: (signalId: string) => void;
+  onClose: () => void;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!signal) return;
+    previouslyFocusedElement.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeButtonRef.current?.focus();
+
+    return () => {
+      previouslyFocusedElement.current?.focus();
+      previouslyFocusedElement.current = null;
+    };
+  }, [signal]);
+
+  if (!signal) return null;
+
+  const evidenceItems = signal.evidenceItems ?? [];
+  const evidenceItemIds = signal.evidenceItemIds ?? [];
+  const evidenceReferenceCount = evidenceItemIds.length;
+  const otherSignals = signals.filter((otherSignal) => otherSignal._id !== signal._id);
+  const plan = signal.currentPlan;
+  const decision = plan?.approvalDecision;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)" }} aria-label="Signal detail overlay">
+      <button type="button" aria-label="Close signal detail backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="signal-detail-title"
+        className="relative h-full w-full max-w-2xl overflow-y-auto border-l p-6 sm:p-8" style={{ background: "var(--panel)", color: "var(--ink)", borderColor: "var(--line)", boxShadow: "var(--shadow-pop)" }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.25em]" style={{ color: "var(--signal)" }}>Signal detail</p>
+            <h2 id="signal-detail-title" className="mt-3 text-3xl font-semibold tracking-tight">
+              {signal.title || "Untitled signal"}
+            </h2>
+            <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>{signal.summary || "Signal summary is not available yet."}</p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            onClick={onClose}
+            className="rounded-full border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2" style={{ borderColor: "var(--line)", color: "var(--ink)", background: "var(--panel-2)", boxShadow: "0 0 0 0 var(--signal-soft)" }}
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <SignalDetailMetric label="Type" value={formatSignalLabel(signal.type)} />
+          <SignalDetailMetric label="Status" value={formatSignalLabel(signal.status)} />
+          <SignalDetailMetric label="Evidence" value={`${evidenceReferenceCount} item${evidenceReferenceCount === 1 ? "" : "s"}`} />
+          <SignalDetailMetric label="Strength" value={formatSignalPercent(signal.strength)} />
+          <SignalDetailMetric label="Confidence" value={formatSignalPercent(signal.confidence)} />
+          <SignalDetailMetric label="Updated" value={formatSignalDate(signal.updatedAt)} />
+          <SignalDetailMetric label="Created" value={formatSignalDate(signal.createdAt)} />
+        </div>
+
+        <section className="mt-8 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Evidence</p>
+          {evidenceItems.length > 0 ? (
+            <div className="mt-4 space-y-4">
+              {evidenceItems.map((item) => (
+                <article key={item.id} className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "var(--signal-soft)", color: "var(--signal)" }}>{formatSignalLabel(item.clusterType)}</span>
+                    <span className="rounded-full px-3 py-1 text-xs" style={{ background: "var(--panel-3)", color: "var(--ink-soft)" }}>Severity: {formatSignalLabel(item.severity)}</span>
+                    <span className="rounded-full px-3 py-1 text-xs" style={{ background: "var(--panel-3)", color: "var(--ink-soft)" }}>Decision: {formatSignalLabel(item.decision)}</span>
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold">{item.title || "Evidence item"}</h3>
+                  <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>{item.summary || "No evidence summary saved yet."}</p>
+                  <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-3" style={{ color: "var(--ink-faint)" }}>
+                    <SignalDetailInlineMetric label="Frequency" value={String(item.frequency ?? 0)} />
+                    <SignalDetailInlineMetric label="Confidence" value={formatSignalPercent(item.confidence)} />
+                    <SignalDetailInlineMetric label="Source run" value={item.runId || "Not linked"} />
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : evidenceReferenceCount > 0 ? (
+            <div className="mt-4 rounded-2xl p-4 text-sm leading-6" style={{ background: "var(--inset)", color: "var(--ink-soft)" }}>
+              <p>Evidence references saved, but detailed evidence text is not available in this view yet.</p>
+              <p className="mt-2 text-xs" style={{ color: "var(--ink-faint)" }}>References: {evidenceItemIds.join(", ")}</p>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-2xl p-4 text-sm" style={{ background: "var(--inset)", color: "var(--ink-faint)" }}>No evidence has been saved for this signal yet.</p>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Recommended next step</p>
+          <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink)" }}>
+            {plan?.recommendedChange ?? "Signal is still collecting evidence before a next step is proposed."}
+          </p>
+          {plan ? (
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <SignalDetailList title="Files to change" items={plan.filesToChange} />
+              <SignalDetailList title="Guardrails" items={plan.guardrails} />
+              <SignalDetailList title="Acceptance criteria" items={plan.acceptanceCriteria} />
+            </div>
+          ) : null}
+        </section>
+
+        <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Decision memory</p>
+          {decision ? (
+            <div className="mt-3 text-sm leading-6" style={{ color: "var(--ink)" }}>
+              <p>Founder {decision.action === "approve" ? "approved" : "rejected"} this plan on {formatSignalDate(decision.decidedAt)}.</p>
+              {decision.note ? <p className="mt-2" style={{ color: "var(--ink-soft)" }}>“{decision.note}”</p> : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink-faint)" }}>No founder decision has been recorded for this signal yet.</p>
+          )}
+        </section>
+
+        {otherSignals.length > 0 ? (
+          <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Other signals</p>
+            <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-faint)" }}>
+              Select another saved signal without leaving this detail drawer.
+            </p>
+            <div className="mt-4 space-y-2">
+              {otherSignals.map((otherSignal) => (
+                <button
+                  key={otherSignal._id}
+                  type="button"
+                  onClick={() => onSelectSignal(otherSignal._id)}
+                  className="w-full rounded-2xl p-3 text-left text-sm transition focus:outline-none focus-visible:ring-2" style={{ background: "var(--inset)", color: "var(--ink)", border: "1px solid var(--line)", outlineColor: "var(--signal)" }}
+                >
+                  <span className="font-semibold">{otherSignal.title || "Untitled signal"}</span>
+                  <span className="mt-1 block text-xs" style={{ color: "var(--ink-faint)" }}>
+                    {formatSignalLabel(otherSignal.status)} · {formatSignalDate(otherSignal.updatedAt)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+      </aside>
     </div>
   );
 }
@@ -1029,102 +1351,47 @@ function FounderDecisionPanel({
 }: {
   run: ApiRun;
   decidingRunId: string | null;
-  onDecide: (runId: string, action: "approve" | "reject", note?: string) => Promise<void>;
+  onDecide: (runId: string, action: "approve" | "reject") => Promise<void>;
 }) {
-  const [composingDecision, setComposingDecision] = useState<"approve" | "reject" | null>(null);
-  const [decisionNote, setDecisionNote] = useState("");
-
   if (run.founderDecision) {
     return (
-      <div className="rounded-3xl border border-[var(--success-line)] bg-[var(--success)]/10 p-5">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[var(--success)]">Founder decision</p>
-        <p className="mt-3 text-lg font-semibold text-[var(--ink)]">
-          {run.founderDecision.action === "approve" ? "Approved" : "Rejected"}
-        </p>
-        <p className="mt-2 text-sm text-[var(--ink-soft)]">{new Date(run.founderDecision.decidedAt).toLocaleString()}</p>
-        {run.founderDecision.note ? <p className="mt-3 text-sm text-[var(--ink)]">“{run.founderDecision.note}”</p> : null}
-      </div>
+      <Panel style={{ borderColor: "var(--success-line)", background: "var(--success-bg)", padding: 18 }}>
+        <Eyebrow>Founder decision</Eyebrow>
+        <p style={{ margin: "10px 0 0", fontSize: 18, fontWeight: 800 }}>{run.founderDecision.action === "approve" ? "Approved" : "Rejected"}</p>
+        <p style={{ margin: "6px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>{new Date(run.founderDecision.decidedAt).toLocaleString()}</p>
+        {run.founderDecision.note ? <p style={{ margin: "10px 0 0", color: "var(--ink-soft)", fontSize: 14 }}>“{run.founderDecision.note}”</p> : null}
+      </Panel>
     );
   }
 
   if (run.status !== "plan_ready") {
     return (
-      <div className="rounded-3xl border border-[var(--line)] bg-[var(--bg-alt)] p-5">
-        <p className="text-sm font-semibold text-[var(--ink)]">Founder approval gate</p>
-        <p className="mt-2 text-sm leading-6 text-[var(--ink-soft)]">
+      <Panel style={{ padding: 18 }}>
+        <Eyebrow soft>Founder approval gate</Eyebrow>
+        <p style={{ margin: "8px 0 0", color: "var(--ink-soft)", lineHeight: 1.55, fontSize: 14 }}>
           Approval controls appear once the agent has enough evidence and marks a run as plan-ready.
         </p>
-      </div>
+      </Panel>
     );
   }
 
   const isDeciding = decidingRunId === run._id;
 
   return (
-    <div className="rounded-3xl border border-[var(--warning-line)] bg-[var(--warning-bg)] p-5">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[var(--warning)]">Founder approval required</p>
-      <p className="mt-3 text-sm leading-6 text-[var(--ink)]">
+    <Panel style={{ borderColor: "var(--warning-line)", background: "var(--warning-bg)", padding: 18 }}>
+      <Eyebrow>Founder approval required</Eyebrow>
+      <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>
         SignalGen found enough evidence to propose a plan. Approving only records your decision for the next PR step; it does not edit code yet.
       </p>
-      {composingDecision ? (
-        <div className="mt-4">
-          <textarea
-            autoFocus
-            className="sg-textarea"
-            onChange={(event) => setDecisionNote(event.target.value)}
-            placeholder={composingDecision === "approve" ? "Optional approval note for the agent…" : "Optional reason this was rejected…"}
-            rows={2}
-            value={decisionNote}
-          />
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => {
-                const action = composingDecision;
-                void onDecide(run._id, action, decisionNote).then(() => {
-                  setComposingDecision(null);
-                  setDecisionNote("");
-                });
-              }}
-              disabled={isDeciding}
-              className={composingDecision === "approve" ? "sg-btn sg-btn--success sg-btn--sm" : "sg-btn sg-btn--danger sg-btn--sm"}
-            >
-              {isDeciding ? "Saving..." : composingDecision === "approve" ? "Confirm approval" : "Confirm rejection"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setComposingDecision(null);
-                setDecisionNote("");
-              }}
-              disabled={isDeciding}
-              className="sg-btn sg-btn--soft sg-btn--sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => setComposingDecision("approve")}
-            disabled={isDeciding}
-            className="sg-btn sg-btn--success"
-          >
-            Approve plan
-          </button>
-          <button
-            type="button"
-            onClick={() => setComposingDecision("reject")}
-            disabled={isDeciding}
-            className="sg-btn sg-btn--danger"
-          >
-            Reject plan
-          </button>
-        </div>
-      )}
-    </div>
+      <div style={{ marginTop: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Button variant="success" onClick={() => void onDecide(run._id, "approve")} disabled={isDeciding} loading={isDeciding}>
+          {isDeciding ? "Saving..." : "Approve plan"}
+        </Button>
+        <Button variant="danger" onClick={() => void onDecide(run._id, "reject")} disabled={isDeciding}>
+          Reject plan
+        </Button>
+      </div>
+    </Panel>
   );
 }
 
@@ -1145,91 +1412,64 @@ function ImplementationPanel({
 
   if (!run.implementation) {
     return (
-      <div className="rounded-3xl border border-[var(--info-line)] bg-[var(--info-bg)] p-5">
-        <p className="sg-eyebrow">Guarded implementation</p>
-        <p className="mt-3 text-sm leading-6 text-[var(--ink)]">
+      <Panel style={{ borderColor: "var(--signal)", background: "var(--signal-soft)", padding: 18 }}>
+        <Eyebrow>Guarded implementation</Eyebrow>
+        <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>
           This approved signal is ready for the next safe agent step. Starting implementation only queues an auditable job; it does not edit code or create a PR yet.
         </p>
-        <button
-          onClick={() => void onRunAction(run._id, "start")}
-          disabled={isWorking}
-          className="mt-5 sg-btn sg-btn--primary"
-        >
+        <Button variant="signal" onClick={() => void onRunAction(run._id, "start")} disabled={isWorking} loading={isWorking} style={{ marginTop: 16 }}>
           {isWorking ? "Starting..." : "Start guarded implementation"}
-        </button>
-      </div>
+        </Button>
+      </Panel>
     );
   }
 
   return (
-    <div className="rounded-3xl border border-[var(--info-line)] bg-[var(--info-bg)] p-5">
-      <p className="sg-eyebrow">Implementation memory</p>
-      <p className="mt-3 text-lg font-semibold text-[var(--ink)]">{run.implementation.status}</p>
-      <p className="mt-2 text-sm text-[var(--ink-soft)]">Branch: {run.implementation.branchName}</p>
-      <p className="mt-3 text-sm leading-6 text-[var(--ink)]">{run.implementation.summary}</p>
+    <Panel style={{ borderColor: "var(--signal)", background: "var(--signal-soft)", padding: 18 }}>
+      <Eyebrow>Implementation memory</Eyebrow>
+      <p style={{ margin: "10px 0 0", fontSize: 18, fontWeight: 800 }}>{run.implementation.status}</p>
+      <p style={{ margin: "6px 0 0", color: "var(--ink-soft)", fontSize: 13.5 }}>Branch: {run.implementation.branchName}</p>
+      <p style={{ margin: "10px 0 0", color: "var(--ink)", lineHeight: 1.55, fontSize: 14 }}>{run.implementation.summary}</p>
       {run.implementation.status === "queued" ? (
-        <button
-          onClick={() => void onRunAction(run._id, "prepare-pr")}
-          disabled={isWorking}
-          className="mt-5 sg-btn sg-btn--primary"
-        >
+        <Button variant="signal" onClick={() => void onRunAction(run._id, "prepare-pr")} disabled={isWorking} loading={isWorking} style={{ marginTop: 16 }}>
           {isWorking ? "Preparing..." : "Prepare PR draft"}
-        </button>
+        </Button>
       ) : null}
       {run.implementation.prDraft ? (
-        <div className="mt-5 sg-panel sg-panel--cream p-4">
-          <p className="text-sm font-semibold text-[var(--ink)]">{run.implementation.prDraft.title}</p>
-          <p className="mt-2 text-xs text-[var(--ink-faint)]">PR branch: {run.implementation.prDraft.branchName}</p>
-          <p className="mt-4 sg-eyebrow">Files to inspect</p>
-          <ul className="mt-2 space-y-1 text-sm text-[var(--ink-soft)]">
-            {run.implementation.prDraft.filesToInspect.map((item) => (
-              <li key={item}>• {item}</li>
-            ))}
-          </ul>
-          <p className="mt-4 sg-eyebrow">Test commands</p>
-          <ul className="mt-2 space-y-1 text-sm text-[var(--ink-soft)]">
-            {run.implementation.prDraft.testCommands.map((item) => (
-              <li key={item}>• {item}</li>
-            ))}
-          </ul>
-          <p className="mt-4 sg-eyebrow">Checklist</p>
-          <ul className="mt-2 space-y-2 text-sm text-[var(--ink-soft)]">
-            {run.implementation.prDraft.checklist.map((item) => (
-              <li key={item}>• {item}</li>
-            ))}
-          </ul>
-          <details className="mt-4 text-sm text-[var(--ink-soft)]">
-            <summary className="cursor-pointer text-[var(--rose-hover)]">View PR body draft</summary>
-            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap sg-panel sg-panel--cream p-4 text-xs leading-5 text-[var(--ink)]">
+        <Panel style={{ marginTop: 16, padding: 16 }}>
+          <p style={{ fontWeight: 800 }}>{run.implementation.prDraft.title}</p>
+          <p className="sg-meta" style={{ marginTop: 6 }}>PR branch: {run.implementation.prDraft.branchName}</p>
+          <InfoGrid title="Files to inspect" items={run.implementation.prDraft.filesToInspect} />
+          <InfoGrid title="Test commands" items={run.implementation.prDraft.testCommands} />
+          <InfoGrid title="Checklist" items={run.implementation.prDraft.checklist} />
+          <details style={{ marginTop: 14, color: "var(--ink-soft)", fontSize: 14 }}>
+            <summary className="sg-link" style={{ cursor: "pointer" }}>View PR body draft</summary>
+            <pre style={{ marginTop: 12, maxHeight: 288, overflow: "auto", whiteSpace: "pre-wrap", borderRadius: 14, background: "var(--inset)", padding: 14, color: "var(--ink)", fontSize: 12, lineHeight: 1.45 }}>
               {run.implementation.prDraft.body}
             </pre>
           </details>
-        </div>
+        </Panel>
       ) : null}
-    </div>
+    </Panel>
   );
 }
 
-function InfoCard({ title, items }: { title: string; items: string[] }) {
+function InfoGrid({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="sg-panel sg-panel--cream p-5">
-      <p className="text-sm font-semibold text-[var(--ink)]">{title}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--ink-soft)]">
-        {items.length > 0 ? (
-          items.map((item) => <li key={item}>• {item}</li>)
-        ) : (
-          <li className="text-[var(--ink-faint)]">No items yet.</li>
-        )}
+    <Panel style={{ padding: 14 }}>
+      <Eyebrow soft>{title}</Eyebrow>
+      <ul style={{ margin: "10px 0 0", paddingLeft: 18, color: "var(--ink-soft)", lineHeight: 1.65, fontSize: 14 }}>
+        {items.length > 0 ? items.map((item) => <li key={item}>{item}</li>) : <li style={{ color: "var(--ink-faint)" }}>No items yet.</li>}
       </ul>
-    </div>
+    </Panel>
   );
 }
 
 function SignalDetailMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="sg-panel sg-panel--cream p-4">
-      <p className="sg-eyebrow sg-eyebrow--soft">{label}</p>
-      <p className="mt-2 break-words text-sm font-semibold text-[var(--ink)]">{value}</p>
+    <div className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--ink-faint)" }}>{label}</p>
+      <p className="mt-2 break-words text-sm font-semibold" style={{ color: "var(--ink)" }}>{value}</p>
     </div>
   );
 }
@@ -1237,21 +1477,59 @@ function SignalDetailMetric({ label, value }: { label: string; value: string }) 
 function SignalDetailInlineMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="font-semibold uppercase tracking-[0.12em] text-[var(--ink-faint)]">{label}</p>
-      <p className="mt-1 break-words text-[var(--ink-soft)]">{value}</p>
+      <p className="font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--ink-faint)" }}>{label}</p>
+      <p className="mt-1 break-words" style={{ color: "var(--ink-soft)" }}>{value}</p>
     </div>
   );
 }
 
 function SignalDetailList({ title, items = [] }: { title: string; items?: string[] }) {
   return (
-    <div className="sg-panel sg-panel--cream p-4">
-      <p className="sg-eyebrow">{title}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6 text-[var(--ink-soft)]">
-        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li className="text-[var(--ink-faint)]">No items saved yet.</li>}
+    <div className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
+      <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--signal)" }}>{title}</p>
+      <ul className="mt-3 space-y-2 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>
+        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li style={{ color: "var(--ink-faint)" }}>No items saved yet.</li>}
       </ul>
     </div>
   );
+}
+
+function initialDashboardTab(): DashboardTab {
+  if (typeof window === "undefined") return "new-analysis";
+  const tabFromUrl = new URLSearchParams(window.location.search).get("tab");
+  return isDashboardTab(tabFromUrl) ? tabFromUrl : "new-analysis";
+}
+
+function validateDashboardScreenshotFiles(inputFiles: File[]): { files: File[]; error: string | null } {
+  const files = inputFiles.slice(0, MAX_SCREENSHOT_FILES);
+  if (inputFiles.length > MAX_SCREENSHOT_FILES) {
+    return { files, error: "Please upload at most 5 screenshots per run. The first 5 were selected." };
+  }
+
+  const unsupported = files.find((file) => !ACCEPTED_SCREENSHOT_TYPES.has(file.type));
+  if (unsupported) {
+    return { files: [], error: "Screenshots must be PNG, JPG, or WebP files." };
+  }
+
+  const oversized = files.find((file) => file.size > MAX_SCREENSHOT_FILE_BYTES);
+  if (oversized) {
+    return { files: [], error: "Each screenshot must be 4 MB or smaller." };
+  }
+
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalSize > MAX_SCREENSHOT_TOTAL_BYTES) {
+    return { files: [], error: "Upload at most 8 MB of screenshots per run." };
+  }
+
+  return { files, error: null };
+}
+
+function isDashboardTab(value: string | null): value is DashboardTab {
+  return value === "new-analysis" || value === "all-signals" || value === "github";
+}
+
+function shortId(value: string) {
+  return value.length > 8 ? value.slice(-8) : value;
 }
 
 function formatSignalLabel(value: string | undefined): string {
@@ -1269,4 +1547,58 @@ function formatSignalDate(value: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Not available";
   return date.toLocaleString();
+}
+
+function signalTypeVariant(type: string | undefined): "success" | "warning" | "error" | "info" | "signal" | "outline" {
+  switch (type) {
+    case "feature_request":
+      return "signal";
+    case "bug":
+      return "error";
+    case "praise":
+      return "success";
+    case "trust_objection":
+    case "pricing":
+      return "warning";
+    case "friction":
+      return "info";
+    default:
+      return "outline";
+  }
+}
+
+function signalStatusVariant(status: string | undefined): "success" | "warning" | "error" | "info" | "signal" | "outline" {
+  switch (status) {
+    case "approved":
+    case "implemented":
+      return "success";
+    case "rejected":
+      return "error";
+    case "plan_ready":
+      return "warning";
+    case "accumulating":
+    case "needs_more_evidence":
+      return "info";
+    default:
+      return "outline";
+  }
+}
+
+function runStatusVariant(status: string | undefined): "success" | "warning" | "error" | "info" | "signal" | "outline" {
+  switch (status) {
+    case "approved":
+    case "pr_created":
+      return "success";
+    case "rejected":
+    case "failed":
+      return "error";
+    case "plan_ready":
+    case "needs_review":
+      return "warning";
+    case "signal_detected":
+    case "insufficient_evidence":
+      return "info";
+    default:
+      return "outline";
+  }
 }
