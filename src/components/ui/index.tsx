@@ -696,6 +696,7 @@ export type MemoryEntryProps = {
     title: string;
     type?: SignalType | string;
     status?: SignalGenRunStatus | string;
+    pipelineStatus?: SignalGenRunStatus | string;
     updatedAt?: string;
     confidence?: number;
     evidence?: Array<{ frequency?: number }>;
@@ -705,6 +706,7 @@ export type MemoryEntryProps = {
   title?: string;
   type?: SignalType | string;
   status?: SignalGenRunStatus | string;
+  pipelineStatus?: SignalGenRunStatus | string;
   updatedAt?: string;
   confidence?: number;
   comments?: number;
@@ -714,11 +716,12 @@ export type MemoryEntryProps = {
   onOpenSignal?: (signal: MemoryEntryProps["s"]) => void;
 };
 
-export function MemoryEntry({ s, title, type, status, updatedAt, confidence, comments, clusters, files, note, onOpenSignal }: MemoryEntryProps) {
+export function MemoryEntry({ s, title, type, status, pipelineStatus, updatedAt, confidence, comments, clusters, files, note, onOpenSignal }: MemoryEntryProps) {
   const entry = {
     title: title ?? s?.title ?? "Untitled signal",
     type: type ?? s?.type,
     status: status ?? s?.status ?? "signal_detected",
+    pipelineStatus: pipelineStatus ?? s?.pipelineStatus ?? status ?? s?.status ?? "signal_detected",
     updatedAt: updatedAt ?? s?.updatedAt,
     confidence: confidence ?? s?.confidence ?? 0,
     comments: comments ?? s?.evidence?.reduce((total, item) => total + (item.frequency ?? 0), 0) ?? 0,
