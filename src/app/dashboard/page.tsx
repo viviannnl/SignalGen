@@ -476,7 +476,7 @@ export default function DashboardPage() {
   const processingStage = isProcessing ? 2 : isCreating ? 1 : latestRun ? stageIndex(latestRun.status) : 0;
 
   return (
-    <main className="sg-page-bg" style={{ minHeight: "100vh", padding: "28px clamp(16px,4vw,42px) 48px", color: "var(--ink)" }}>
+    <main className="sg-grid-bg" style={{ minHeight: "100vh", background: "var(--bg)", padding: "32px clamp(16px,4vw,42px) 56px", color: "var(--ink)" }}>
       <style>{`
         @media (max-width: 920px) {
           .dashboard-two-col,
@@ -489,12 +489,12 @@ export default function DashboardPage() {
           .sg-row { align-items: flex-start !important; flex-direction: column !important; }
         }
       `}</style>
-      <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}>
+      <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", flexDirection: "column", gap: 26 }}>
         <DashboardHeader selectedRepo={selectedRepo} onRefresh={() => void loadRuns()} />
 
         <AuthControls />
 
-        <Tabs aria-label="Dashboard sections" style={{ alignSelf: "flex-start", maxWidth: "100%", overflowX: "auto" }}>
+        <Tabs aria-label="Dashboard sections" style={{ alignSelf: "flex-start", maxWidth: "100%", overflowX: "auto", padding: 6, gap: 6 }}>
           {DASHBOARD_TABS.map((tab) => (
             <Tab
               key={tab.id}
@@ -502,7 +502,7 @@ export default function DashboardPage() {
               selected={activeTab === tab.id}
               aria-controls={`${tab.id}-panel`}
               onClick={() => setDashboardTab(tab.id)}
-              style={{ whiteSpace: "nowrap" }}
+              style={{ whiteSpace: "nowrap", padding: "13px 26px", fontSize: 15.5 }}
             >
               {tab.label}
             </Tab>
@@ -643,16 +643,16 @@ export default function DashboardPage() {
 
 function DashboardHeader({ selectedRepo, onRefresh }: { selectedRepo?: RepoConnection; onRefresh: () => void }) {
   return (
-    <header style={{ marginBottom: 4 }}>
-      <Link href="/" className="sg-link" style={{ display: "inline-flex", marginBottom: 14, fontSize: 14 }}>
+    <header style={{ marginBottom: 2 }}>
+      <Link href="/" className="sg-link" style={{ display: "inline-flex", marginBottom: 18, fontSize: 14.5 }}>
         <Icon name="arrowL" size={16} /> SignalGen home
       </Link>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20, flexWrap: "wrap" }}>
         <div>
-          <h1 className="sg-display" style={{ fontSize: "clamp(30px,3.6vw,46px)", lineHeight: 1, margin: 0 }}>
+          <h1 className="sg-display" style={{ fontSize: "clamp(34px,4vw,50px)", lineHeight: 0.98, margin: 0 }}>
             Founder signal dashboard
           </h1>
-          <p style={{ maxWidth: 720, color: "var(--ink-soft)", marginTop: 10, fontSize: 16, lineHeight: 1.55 }}>
+          <p style={{ maxWidth: 760, color: "var(--ink-soft)", marginTop: 14, fontSize: 17, lineHeight: 1.55 }}>
             {selectedRepo
               ? `Current repo: ${selectedRepo.owner}/${selectedRepo.repo}. Sessions, signals, decisions, and PR work stay scoped to this workspace.`
               : "Choose one connected repo before creating signals, sessions, or PR work."}
@@ -660,7 +660,7 @@ function DashboardHeader({ selectedRepo, onRefresh }: { selectedRepo?: RepoConne
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <ThemeMenu />
-          <Button variant="ghost" onClick={onRefresh} leftIcon={<Icon name="refresh" size={16} />}>
+          <Button variant="ghost" size="lg" onClick={onRefresh} leftIcon={<Icon name="refresh" size={17} />}>
             Refresh
           </Button>
         </div>
@@ -970,7 +970,7 @@ function AllSignalsPanel({
               className="sg-tab"
               aria-pressed={filter === item.id}
               onClick={() => onFilterChange(item.id)}
-              style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap", background: filter === item.id ? "var(--signal)" : undefined, color: filter === item.id ? "#071014" : undefined }}
+              style={{ padding: "10px 17px", fontSize: 13.5, whiteSpace: "nowrap", background: filter === item.id ? "var(--signal)" : undefined, color: filter === item.id ? "#071014" : undefined }}
             >
               {item.label}
             </button>

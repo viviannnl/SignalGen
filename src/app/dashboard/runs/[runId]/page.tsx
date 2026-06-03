@@ -781,15 +781,37 @@ function SignedOutState({ dashboardHref, onSignIn }: { dashboardHref: string; on
           </Link>
           <ThemeMenu />
         </div>
-        <Card role="status" aria-live="polite" style={{ padding: "var(--pad-card)", borderColor: "var(--warning-line)" }}>
-          <Pill variant="warning" dot>auth</Pill>
-          <h1 className="sg-display" style={{ fontSize: "clamp(28px,3.4vw,42px)", margin: "16px 0 8px" }}>Sign in to view this run</h1>
-          <p style={{ color: "var(--ink-soft)", lineHeight: 1.55, maxWidth: 620 }}>
-            Run details and founder decisions are scoped to your Clerk workspace. Sign in before SignalGen loads the protected run or calls any approval API.
-          </p>
-          <Button variant="signal" onClick={onSignIn} style={{ marginTop: 18 }} leftIcon={<Icon name="shield" size={16} />}>
-            Sign in with Clerk
-          </Button>
+        <Card className="sg-grid-bg sg-ticked" role="status" aria-live="polite" style={{ padding: "clamp(28px,5vw,52px)", borderColor: "var(--warning-line)", background: "var(--hero-grad)", overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: 18, alignItems: "start" }}>
+            <span style={{ width: 62, height: 62, borderRadius: 18, display: "grid", placeItems: "center", background: "var(--inset)", color: "var(--signal)", border: "1px dashed var(--line-2)", boxShadow: "var(--shadow-card)" }}>
+              <Icon name="shield" size={28} />
+            </span>
+            <div>
+              <Eyebrow>Protected run detail</Eyebrow>
+              <h1 className="sg-display" style={{ fontSize: "clamp(32px,4.4vw,52px)", lineHeight: 0.98, margin: "12px 0 12px" }}>Sign in to view this run</h1>
+              <p style={{ color: "var(--ink-soft)", lineHeight: 1.6, fontSize: 16, maxWidth: 700, margin: 0 }}>
+                Run details and founder decisions are scoped to your Clerk workspace and selected repo. Sign in before SignalGen loads the protected run or calls any approval API.
+              </p>
+            </div>
+          </div>
+          <Panel style={{ marginTop: 26, padding: 18, background: "color-mix(in srgb, var(--panel) 82%, var(--signal-soft))" }}>
+            <div style={{ display: "grid", gap: 10 }}>
+              {["No run detail API call is made while signed out.", "Approval and rejection actions stay unavailable until auth is ready.", "Use the dashboard repo selector first if this link is missing repo context."].map((item) => (
+                <div key={item} style={{ display: "flex", gap: 10, alignItems: "flex-start", color: "var(--ink-soft)", fontSize: 14.5, lineHeight: 1.5 }}>
+                  <span style={{ color: "var(--signal)", flex: "none", marginTop: 3 }}><Icon name="check" size={15} /></span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+          <div style={{ marginTop: 26, display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <Button variant="signal" size="lg" onClick={onSignIn} leftIcon={<Icon name="shield" size={17} />}>
+              Sign in with Clerk
+            </Button>
+            <Link href={dashboardHref} className="sg-link" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800 }}>
+              Back to repo dashboard <Icon name="arrow" size={15} />
+            </Link>
+          </div>
         </Card>
       </div>
     </main>
