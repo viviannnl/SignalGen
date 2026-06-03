@@ -24,6 +24,9 @@ describe("api auth response helpers", () => {
     });
 
     expect(result).toBeInstanceOf(Response);
+    if (!(result instanceof Response)) {
+      throw new Error("Expected missing auth to return a Response");
+    }
     expect(result.status).toBe(401);
     await expect(result.json()).resolves.toMatchObject({ code: "AUTH_REQUIRED" });
   });

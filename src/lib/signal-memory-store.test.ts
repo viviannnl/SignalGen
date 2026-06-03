@@ -107,7 +107,8 @@ describe("buildMongoSignalMemoryStore", () => {
     const store = buildMongoSignalMemoryStore(db as never, runsCollection as never);
     const run = makeRun();
 
-    await store.persistSignalMemory(run, {
+    expect(store.persistSignalMemory).toBeDefined();
+    await store.persistSignalMemory!(run, {
       evidenceItems: makeSignal().evidenceItems ?? [],
       signalsToCreate: [makeSignal()],
       signalsToUpdate: [{ signalId: "64f0c1f2a3b4c5d6e7f80904", update: { updatedAt: "2026-01-01T00:02:00.000Z" } }],

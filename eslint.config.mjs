@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local Claude Design export artifacts are source-of-truth references, not app code.
+    "redesign-reference/**",
   ]),
 ]);
 
