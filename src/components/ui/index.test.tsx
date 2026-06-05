@@ -158,6 +158,17 @@ describe("SignalGen v3 UI primitives", () => {
     expect(strip).toContain('role="list"');
   });
 
+  it("keeps pipeline strip labels visible and legible by default", () => {
+    const strip = renderToStaticMarkup(<PipelineStrip current={3} />);
+
+    for (const label of ["Upload", "Extract", "Signal", "Plan", "Approve", "Branch", "Checks", "PR", "Preview"]) {
+      expect(strip).toContain(label);
+    }
+    expect(strip).toContain("font-size:11px");
+    expect(strip).toContain("letter-spacing:.08em");
+    expect(strip).toContain("var(--ink-soft)");
+  });
+
   it("renders LoopMap nodes and wires clickable node callbacks in source", () => {
     const html = renderToStaticMarkup(<LoopMap stage={3} signalValue={91} runLabel="run-test" title="Iteration loop" />);
 
@@ -171,6 +182,8 @@ describe("SignalGen v3 UI primitives", () => {
     expect(source).toContain("const NodeTag = onNode ? \"button\" : \"article\"");
     expect(source).toContain("ResizeObserver");
     expect(source).toContain("transform: `scale(${scale})`");
+    expect(source).toContain("var(--connector-strong)");
+    expect(source).toContain('opacity: state === "pending" ? 0.86 : 1');
   });
 
   it("renders Evidence, StrengthBar, and MemoryEntry presentation components", () => {

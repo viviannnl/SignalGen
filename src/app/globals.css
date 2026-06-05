@@ -67,9 +67,10 @@
   --hero-grad:radial-gradient(130% 120% at 82% -10%, #4a141f 0%, #2a0f17 48%, #170a0f 100%);
   --rail-off:#46202c;
   /* blueprint */
-  --grid:rgba(229,85,126,.07);
-  --grid-2:rgba(229,85,126,.12);
+  --grid:rgba(229,85,126,.105);
+  --grid-2:rgba(229,85,126,.18);
   --connector:#E5557E;
+  --connector-strong:#FF7A49;
   --node-bg:var(--panel);
   --tick:var(--line-2);
   color-scheme:dark;
@@ -109,9 +110,10 @@
   --hero-grad:radial-gradient(130% 120% at 82% -10%, #fbeae1 0%, #f3ddd2 55%, #efd6ca 100%);
   --rail-off:#E4CDC3;
   /* blueprint */
-  --grid:rgba(122,31,61,.055);
-  --grid-2:rgba(122,31,61,.10);
+  --grid:rgba(122,31,61,.085);
+  --grid-2:rgba(122,31,61,.15);
   --connector:#B23A5B;
+  --connector-strong:#F2622E;
   --node-bg:var(--panel);
   --tick:var(--line-2);
   color-scheme:light;

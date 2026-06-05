@@ -17,10 +17,16 @@ function authedRequest(input: string, init: RequestInit = {}): Request {
 
 const mockFindOne = vi.fn();
 
+const mockFindImplementationJobByIdempotencyKey = vi.fn();
+
 vi.mock("@/lib/mongodb", () => ({
   getSignalGenDb: vi.fn(async () => ({
     collection: vi.fn(() => ({ findOne: mockFindOne })),
   })),
+}));
+
+vi.mock("@/lib/implementation-job-db", () => ({
+  findImplementationJobByIdempotencyKey: mockFindImplementationJobByIdempotencyKey,
 }));
 
 vi.mock("@/lib/workspace", () => ({
@@ -38,6 +44,8 @@ function requestFor(runId = "64f0c1f2a3b4c5d6e7f80901", repoConnectionId?: strin
 describe("GET /api/runs/[runId]", () => {
   beforeEach(() => {
     mockFindOne.mockReset();
+    mockFindImplementationJobByIdempotencyKey.mockReset();
+    mockFindImplementationJobByIdempotencyKey.mockResolvedValue(null);
   });
 
   it("rejects run detail reads without a selected repo", async () => {
@@ -57,6 +65,29 @@ describe("GET /api/runs/[runId]", () => {
 
     expect(response.status).toBe(200);
     expect(mockFindOne).toHaveBeenCalledWith({ _id, repoConnectionId: "repo-123", workspaceId: "demo" });
+  });
+
+  it("attaches the latest implementation job observed for the run", async () => {
+    const _id = new ObjectId("64f0c1f2a3b4c5d6e7f80901");
+    mockFindOne.mockResolvedValue({ _id, workspaceId: "demo", repoConnectionId: "repo-123", status: "approved" });
+    mockFindImplementationJobByIdempotencyKey.mockResolvedValue({
+      _id: "job-1",
+      workspaceId: "demo",
+      runId: _id.toString(),
+      repoConnectionId: "repo-123",
+      status: "succeeded",
+      branchName: "signalgen/job-1",
+      commitSha: "abc123",
+      prUrl: "https://github.com/viviannnl/SignalGen/pull/12",
+      prNumber: 12,
+    });
+
+    const response = await requestFor(_id.toString(), "repo-123");
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockFindImplementationJobByIdempotencyKey).toHaveBeenCalledWith(`demo:${_id.toString()}`, "demo");
+    expect(body.implementationJob).toMatchObject({ status: "succeeded", prNumber: 12, commitSha: "abc123" });
   });
   it("does not return workspace-less legacy runs under Clerk auth", async () => {
     const _id = new ObjectId("64f0c1f2a3b4c5d6e7f80901");

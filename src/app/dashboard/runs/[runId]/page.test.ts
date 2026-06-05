@@ -40,6 +40,16 @@ describe("run detail approval gate source", () => {
     expect(detailSource).toContain("Open Vercel preview");
   });
 
+  it("explains which implementation milestones SignalGen has actually observed", () => {
+    expect(detailSource).toContain("implementationJob");
+    expect(detailSource).toContain("Branch creation");
+    expect(detailSource).toContain("Build/tests");
+    expect(detailSource).toContain("PR opened");
+    expect(detailSource).toContain("Vercel preview");
+    expect(detailSource).toContain("Not observed yet");
+    expect(detailSource).toContain("SignalGen stores PR URLs from the GitHub execution job; build results and Vercel previews need explicit status ingestion before this step can turn green automatically.");
+  });
+
   it("documents the intentional prototype fidelity deviation for unsupported gate controls", () => {
     expect(detailSource).toContain("Fidelity note");
     expect(detailSource).toContain("Request changes");

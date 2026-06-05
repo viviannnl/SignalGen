@@ -478,14 +478,14 @@ export function PipelineStrip({ status, current, stages = SG_STAGES, labels = tr
                   height: stage.gate ? 17 : 13,
                   borderRadius: stage.gate ? 5 : "50%",
                   background: reached ? (stage.gate ? "var(--signal-2)" : "var(--signal)") : "var(--rail-off)",
-                  boxShadow: reached ? "0 0 12px var(--signal-soft)" : "none",
+                  boxShadow: reached ? "0 0 14px var(--signal-soft)" : "0 0 0 1px color-mix(in srgb, var(--rail-off) 72%, var(--ink-soft))",
                   transition: reduced ? "none" : "all .4s",
                   flex: "none",
                 }}
               />
-              {labels && <span style={{ fontFamily: "var(--mono)", fontSize: 9.5, letterSpacing: ".06em", textTransform: "uppercase", color: reached ? "var(--ink-soft)" : "var(--ink-faint)", fontWeight: 600, whiteSpace: "nowrap" }}>{stage.short}</span>}
+              {labels && <span style={{ fontFamily: "var(--mono)", fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: reached ? "var(--ink-soft)" : "color-mix(in srgb, var(--ink-faint) 88%, var(--ink))", fontWeight: 700, whiteSpace: "nowrap" }}>{stage.short}</span>}
             </div>
-            {index < stages.length - 1 && <span style={{ height: 2, flex: "1 1 18px", minWidth: 18, margin: labels ? "0 4px 18px" : "0 4px", background: index < activeIndex ? "linear-gradient(90deg,var(--signal),var(--signal-2))" : "var(--rail-off)", transition: reduced ? "none" : "background .5s" }} />}
+            {index < stages.length - 1 && <span style={{ height: 2.5, flex: "1 1 18px", minWidth: 18, margin: labels ? "0 4px 20px" : "0 4px", background: index < activeIndex ? "linear-gradient(90deg,var(--signal),var(--signal-2))" : "color-mix(in srgb, var(--rail-off) 78%, var(--ink-faint))", transition: reduced ? "none" : "background .5s" }} />}
           </React.Fragment>
         );
       })}
@@ -546,11 +546,11 @@ function LoopNode({ node, state, value, onNode }: { node: LoopNodeModel; state: 
         textAlign: "left",
         cursor: onNode ? "pointer" : "default",
         background: gateActive ? "linear-gradient(135deg,var(--signal),var(--signal-2))" : "var(--node-bg)",
-        border: `1.5px solid ${active ? "var(--signal)" : done ? "var(--connector)" : "var(--line-2)"}`,
+        border: `1.5px solid ${active ? "var(--signal)" : done ? "var(--connector-strong)" : "color-mix(in srgb, var(--line-2) 78%, var(--connector))"}`,
         borderRadius: 16,
         padding: "13px 15px",
         boxShadow: active ? "var(--glow), var(--shadow-card)" : done ? "var(--shadow-card)" : "none",
-        opacity: state === "pending" ? 0.72 : 1,
+        opacity: state === "pending" ? 0.86 : 1,
         transition: "all .4s cubic-bezier(.2,.7,.2,1)",
         display: "flex",
         flexDirection: "column",
@@ -621,14 +621,14 @@ export function LoopMap({ stage = 3, signalValue = 91, onNode, title = "Iteratio
           <svg width="980" height="452" style={{ position: "absolute", inset: 0, pointerEvents: "none" }} aria-hidden="true">
             <defs>
               <marker id="lmArrow" markerWidth="9" markerHeight="9" refX="6" refY="4.5" orient="auto">
-                <path d="M1 1 L7 4.5 L1 8" fill="none" stroke="var(--connector)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M1 1 L7 4.5 L1 8" fill="none" stroke="var(--connector-strong)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </marker>
             </defs>
             {[[178, 220], [378, 420], [578, 608], [766, 802]].map(([x1, x2], index) => (
-              <line key={index} x1={x1} y1={112} x2={x2} y2={112} stroke="var(--connector)" strokeWidth="1.8" className={reached(index) && !reduced ? "sg-flow" : undefined} strokeDasharray="7 7" opacity={reached(index) ? 0.95 : 0.4} markerEnd="url(#lmArrow)" />
+              <line key={index} x1={x1} y1={112} x2={x2} y2={112} stroke={reached(index) ? "var(--connector-strong)" : "var(--connector)"} strokeWidth={reached(index) ? 2.4 : 2} className={reached(index) && !reduced ? "sg-flow" : undefined} strokeDasharray="7 7" opacity={reached(index) ? 1 : 0.62} markerEnd="url(#lmArrow)" />
             ))}
-            <path d="M 881 176 C 881 282, 720 368, 594 368" fill="none" stroke="var(--connector)" strokeWidth="1.8" strokeDasharray="7 7" opacity={macro >= 4 ? 0.95 : 0.4} className={macro >= 4 && !reduced ? "sg-flow" : undefined} markerEnd="url(#lmArrow)" />
-            <path d="M 386 368 C 240 368, 99 282, 99 180" fill="none" stroke="var(--connector)" strokeWidth="1.8" strokeDasharray="7 7" opacity=".55" markerEnd="url(#lmArrow)" />
+            <path d="M 881 176 C 881 282, 720 368, 594 368" fill="none" stroke={macro >= 4 ? "var(--connector-strong)" : "var(--connector)"} strokeWidth={macro >= 4 ? 2.4 : 2} strokeDasharray="7 7" opacity={macro >= 4 ? 1 : 0.62} className={macro >= 4 && !reduced ? "sg-flow" : undefined} markerEnd="url(#lmArrow)" />
+            <path d="M 386 368 C 240 368, 99 282, 99 180" fill="none" stroke="var(--connector)" strokeWidth="2" strokeDasharray="7 7" opacity=".72" markerEnd="url(#lmArrow)" />
           </svg>
           {LOOP_NODES.map((node) => <LoopNode key={node.key} node={node} state={stateFor(node.key)} value={node.key === "signal" ? signalValue : null} onNode={onNode} />)}
           <div style={{ position: "absolute", left: 150, top: 250, fontFamily: "var(--mono)", fontSize: 10.5, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--ink-faint)", maxWidth: 150, lineHeight: 1.5 }}>
@@ -753,7 +753,7 @@ export function MemoryEntry({ s, title, type, status, pipelineStatus, updatedAt,
             </div>
           </div>
           <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 12 }}>{entry.title}</div>
-          <div style={{ marginBottom: 14 }}><PipelineStrip current={stageIndex(entry.status)} labels={false} /></div>
+          <div style={{ marginBottom: 14 }}><PipelineStrip current={stageIndex(entry.status)} /></div>
           <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginBottom: entry.note ? 12 : 0 }}>
             {facts.map(([value, label]) => (
               <div key={label}>
