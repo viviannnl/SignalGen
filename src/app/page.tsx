@@ -154,7 +154,7 @@ function HeroCard() {
       </Panel>
 
       <div className="mt-5">
-        <PipelineStrip current={3} labels={false} />
+        <PipelineStrip current={3} />
       </div>
     </Card>
   );

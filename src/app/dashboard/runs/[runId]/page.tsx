@@ -23,7 +23,7 @@ import {
 } from "@/components/ui";
 import { ThemeMenu } from "@/components/theme-menu";
 import { hasUsableClerkPublishableKey } from "@/lib/clerk-env";
-import type { EvidenceItem, FounderDecisionAction, SignalDecision, SignalGenRun, SignalGenRunStatus, SignalSeverity, SignalType } from "@/lib/types";
+import type { EvidenceItem, FounderDecisionAction, ImplementationJob, SignalDecision, SignalGenRun, SignalGenRunStatus, SignalSeverity, SignalType } from "@/lib/types";
 
 // Fidelity note: the sg3-detail.jsx prototype includes Request changes and Save for later buttons.
 // They are intentionally omitted here because the founder-decision API supports only approve/reject.
@@ -32,6 +32,7 @@ type ApiRun = SignalGenRun & { _id: string };
 
 type RunResponse = {
   run?: ApiRun;
+  implementationJob?: ImplementationJob | null;
   error?: string;
   ok?: boolean;
 };
@@ -108,12 +109,20 @@ function slugBranch(title: string) {
   return `signalgen/${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 42) || "signal"}`;
 }
 
-function realRunStage(run: ApiRun, actionState: ActionState) {
+function realRunStage(run: ApiRun, actionState: ActionState, implementationJob?: ImplementationJob | null) {
   if (run.pr?.previewUrl || run.implementation?.prDraft?.previewUrl) return 8;
-  if (run.pr?.url || run.implementation?.prDraft || run.status === "pr_created") return 7;
-  if (actionState === "preparing" || run.implementation?.status === "running") return 6;
-  if (actionState === "starting" || run.implementation?.status === "queued") return 5;
+  if (run.pr?.url || implementationJob?.prUrl || run.implementation?.prDraft || run.status === "pr_created") return 7;
+  if (actionState === "preparing" || run.implementation?.status === "running" || implementationJob?.status === "running") return 6;
+  if (actionState === "starting" || run.implementation?.status === "queued" || implementationJob?.branchName) return 5;
   return stageIndex(run.status);
+}
+
+function observedLabel(value: boolean) {
+  return value ? "Observed" : "Not observed yet";
+}
+
+function observedVariant(value: boolean): "success" | "outline" {
+  return value ? "success" : "outline";
 }
 
 function runningStageFor(actionState: ActionState) {
@@ -220,6 +229,7 @@ function RunDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }: {
   const [approvalNote, setApprovalNote] = useState("");
   const [rejectNote, setRejectNote] = useState("");
   const [actionState, setActionState] = useState<ActionState>("idle");
+  const [implementationJob, setImplementationJob] = useState<ImplementationJob | null>(null);
 
   async function reloadRun() {
     if (authConfigured && !isSignedIn) {
@@ -252,6 +262,7 @@ function RunDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }: {
     }
 
     setRun(data.run);
+    setImplementationJob(data.implementationJob ?? null);
     return data.run;
   }
 
@@ -312,6 +323,7 @@ function RunDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }: {
         }
 
         setRun(data.run);
+        setImplementationJob(data.implementationJob ?? null);
       } catch (caughtError) {
         if (isMounted) {
           setError(caughtError instanceof Error ? caughtError.message : "Unknown error");
@@ -437,18 +449,22 @@ function RunDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }: {
   const guardrails = run.plan?.guardrails ?? [];
   const typeInfo = typeMeta(getRunType(run));
   const statusInfo = statusMeta(run.status);
-  const currentStage = realRunStage(run, actionState);
+  const currentStage = realRunStage(run, actionState, implementationJob);
   const runningStage = runningStageFor(actionState);
   const isActionRunning = actionState !== "idle";
   const canDecide = run.status === "plan_ready";
   const decisionInfo = run.founderDecision ? DECISION_STATUS_COPY[run.founderDecision.action] : null;
-  const branchName = run.implementation?.branchName ?? run.implementation?.prDraft?.branchName ?? slugBranch(run.signal?.title ?? run._id);
+  const branchName = implementationJob?.branchName ?? run.implementation?.branchName ?? run.implementation?.prDraft?.branchName ?? slugBranch(run.signal?.title ?? run._id);
   const prDraft = run.implementation?.prDraft;
   const testCommands = prDraft?.testCommands ?? [];
   const prChecklist = prDraft?.checklist ?? [];
-  const prUrl = run.pr?.url;
+  const prUrl = run.pr?.url ?? implementationJob?.prUrl;
   const previewUrl = run.pr?.previewUrl ?? prDraft?.previewUrl;
-  const showPrPanel = Boolean(run.implementation || prDraft || run.status === "pr_created" || prUrl || previewUrl || isActionRunning);
+  const showPrPanel = Boolean(run.implementation || implementationJob || prDraft || run.status === "pr_created" || prUrl || previewUrl || isActionRunning);
+  const branchObserved = Boolean(implementationJob?.branchName || run.implementation?.branchName);
+  const checksObserved = Boolean(run.implementation?.status === "running" || implementationJob?.status === "running" || implementationJob?.status === "succeeded" || implementationJob?.status === "failed");
+  const prObserved = Boolean(prUrl || run.status === "pr_created");
+  const previewObserved = Boolean(previewUrl);
 
   return (
     <main className="sg-grid-bg min-h-screen" style={{ background: "var(--bg)", color: "var(--ink)", padding: "28px clamp(16px,4vw,32px) 96px" }}>
@@ -568,6 +584,39 @@ function RunDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }: {
               onApprovalNote={setApprovalNote}
               onRejectNote={setRejectNote}
             />
+
+            <Card style={{ padding: "var(--pad-card)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+                <Eyebrow>Implementation signals · observed by API</Eyebrow>
+                <Pill variant={implementationJob ? "success" : "outline"} dot={Boolean(implementationJob)}>{implementationJob ? "Job record loaded" : "No job record yet"}</Pill>
+              </div>
+              <div className="grid gap-3 md:grid-cols-4">
+                <Panel style={{ padding: 14 }}>
+                  <Pill variant={observedVariant(branchObserved)} dot={branchObserved}>{observedLabel(branchObserved)}</Pill>
+                  <h3 style={{ fontSize: 14.5, fontWeight: 800, margin: "10px 0 4px" }}>Branch creation</h3>
+                  <p className="sg-meta" style={{ margin: 0 }}>{branchObserved ? branchName : "Waiting for an implementation job branch."}</p>
+                </Panel>
+                <Panel style={{ padding: 14 }}>
+                  <Pill variant={observedVariant(checksObserved)} dot={checksObserved}>{observedLabel(checksObserved)}</Pill>
+                  <h3 style={{ fontSize: 14.5, fontWeight: 800, margin: "10px 0 4px" }}>Build/tests</h3>
+                  <p className="sg-meta" style={{ margin: 0 }}>{checksObserved ? `Job status: ${implementationJob?.status ?? run.implementation?.status}` : "No build/check API result is stored yet."}</p>
+                </Panel>
+                <Panel style={{ padding: 14 }}>
+                  <Pill variant={observedVariant(prObserved)} dot={prObserved}>{observedLabel(prObserved)}</Pill>
+                  <h3 style={{ fontSize: 14.5, fontWeight: 800, margin: "10px 0 4px" }}>PR opened</h3>
+                  <p className="sg-meta" style={{ margin: 0 }}>{prObserved ? (implementationJob?.prNumber ? `PR #${implementationJob.prNumber}` : "PR URL stored") : "No pull request URL is stored yet."}</p>
+                </Panel>
+                <Panel style={{ padding: 14 }}>
+                  <Pill variant={observedVariant(previewObserved)} dot={previewObserved}>{observedLabel(previewObserved)}</Pill>
+                  <h3 style={{ fontSize: 14.5, fontWeight: 800, margin: "10px 0 4px" }}>Vercel preview</h3>
+                  <p className="sg-meta" style={{ margin: 0 }}>{previewObserved ? "Preview URL stored" : "No Vercel deployment status is stored yet."}</p>
+                </Panel>
+              </div>
+              <Panel style={{ marginTop: 16, padding: 14, background: "var(--signal-soft)", borderColor: "var(--line-2)" }}>
+                <strong>Current data source:</strong>{" "}
+                <span style={{ color: "var(--ink-soft)" }}>SignalGen stores PR URLs from the GitHub execution job; build results and Vercel previews need explicit status ingestion before this step can turn green automatically.</span>
+              </Panel>
+            </Card>
 
             {actionState === "preparing" && testCommands.length > 0 ? (
               <Card style={{ padding: "var(--pad-card)" }}>

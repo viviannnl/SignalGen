@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getApiAuthContextOrResponse } from "../../../../lib/api-auth";
 
 import { getSignalGenDb } from "@/lib/mongodb";
+import { findImplementationJobByIdempotencyKey } from "@/lib/implementation-job-db";
 import { resolveRepoConnectionId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -38,5 +39,7 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Run not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ run: serializeRun(doc) });
+  const implementationJob = await findImplementationJobByIdempotencyKey(`${workspaceId}:${runId}`, workspaceId);
+
+  return NextResponse.json({ run: serializeRun(doc), implementationJob });
 }
