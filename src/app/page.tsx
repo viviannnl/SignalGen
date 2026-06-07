@@ -94,8 +94,20 @@ function useRevealOnScroll() {
 function Logo() {
   return (
     <Link href="/" className="flex items-center gap-3 rounded-full text-[var(--ink)] no-underline focus-visible:outline focus-visible:outline-4 focus-visible:outline-[var(--signal-soft)]">
-      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--signal),var(--signal-2))] font-[var(--display)] text-base font-extrabold text-[#1a0a08] shadow-[var(--glow)]">
-        SG
+      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[linear-gradient(135deg,var(--signal),var(--signal-2))] text-[#1a0a08] shadow-[var(--glow)]">
+        <svg
+          aria-hidden="true"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M3 12h3l2.5-6 4 14 3-9 1.5 3H21" />
+        </svg>
       </span>
       <span className="text-lg font-extrabold tracking-[-0.02em]">SignalGen</span>
     </Link>
