@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import { AuthControls } from "../auth-controls";
 import { ThemeMenu } from "@/components/theme-menu";
@@ -85,7 +85,6 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>("new-analysis");
   const [githubStatus, setGithubStatus] = useState<GitHubStatus>({ status: "loading" });
   const [selectedRepoConnectionId, setSelectedRepoConnectionId] = useState("");
-  const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [signalQuery, setSignalQuery] = useState("");
   const [signalFilter, setSignalFilter] = useState<SignalFilter>("all");
 
@@ -96,10 +95,6 @@ export default function DashboardPage() {
       : [githubStatus.repoConnection];
   }, [githubStatus]);
   const selectedRepo = connectedRepos.find((connection) => connection._id === selectedRepoConnectionId);
-  const selectedSignal = useMemo(
-    () => signals.find((signal) => signal._id === selectedSignalId) ?? null,
-    [selectedSignalId, signals],
-  );
   const latestRun = runs[0];
   const fileNames = useMemo(() => files.map((file) => file.name), [files]);
   const filteredSignals = useMemo(() => {
@@ -207,19 +202,6 @@ export default function DashboardPage() {
     }, 0);
     return () => window.clearTimeout(timeoutId);
   }, []);
-
-  useEffect(() => {
-    if (!selectedSignal) return;
-
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setSelectedSignalId(null);
-      }
-    }
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedSignal]);
 
   async function createRun() {
     if (!selectedRepoConnectionId) {
@@ -608,7 +590,7 @@ export default function DashboardPage() {
               isLoading={isLoading}
               onQueryChange={setSignalQuery}
               onFilterChange={setSignalFilter}
-              onOpenSignal={(signalId) => setSelectedSignalId(signalId)}
+              onOpenRun={(runId) => router.push(`/dashboard/runs/${runId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=all-signals`)}
               onGoGitHub={() => setDashboardTab("github")}
             />
           </section>
@@ -631,12 +613,6 @@ export default function DashboardPage() {
           </section>
         ) : null}
       </div>
-      <SignalDetailDrawer
-        signal={selectedSignal}
-        signals={signals}
-        onSelectSignal={setSelectedSignalId}
-        onClose={() => setSelectedSignalId(null)}
-      />
     </main>
   );
 }
@@ -930,7 +906,7 @@ function AllSignalsPanel({
   isLoading,
   onQueryChange,
   onFilterChange,
-  onOpenSignal,
+  onOpenRun,
   onGoGitHub,
 }: {
   selectedRepo?: RepoConnection;
@@ -941,7 +917,7 @@ function AllSignalsPanel({
   isLoading: boolean;
   onQueryChange: (value: string) => void;
   onFilterChange: (value: SignalFilter) => void;
-  onOpenSignal: (signalId: string) => void;
+  onOpenRun: (runId: string) => void;
   onGoGitHub: () => void;
 }) {
   if (!selectedRepo) {
@@ -983,7 +959,7 @@ function AllSignalsPanel({
       ) : filteredSignals.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {filteredSignals.map((signal) => (
-            <SignalRow key={signal._id} signal={signal} onOpenSignal={onOpenSignal} />
+            <SignalRow key={signal._id} signal={signal} onOpenRun={onOpenRun} />
           ))}
         </div>
       ) : signals.length > 0 ? (
@@ -995,14 +971,18 @@ function AllSignalsPanel({
   );
 }
 
-function SignalRow({ signal, onOpenSignal }: { signal: ApiSignal; onOpenSignal: (signalId: string) => void }) {
+function SignalRow({ signal, onOpenRun }: { signal: ApiSignal; onOpenRun: (runId: string) => void }) {
   const evidenceItemIds = signal.evidenceItemIds ?? [];
+  const runId = signal.runId;
+  const hasRun = Boolean(runId);
   return (
     <button
       type="button"
-      onClick={() => onOpenSignal(signal._id)}
+      onClick={runId ? () => onOpenRun(runId) : undefined}
+      disabled={!hasRun}
       className="sg-row"
-      style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "left", cursor: "pointer", background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "var(--rad)", padding: "14px 16px", transition: ".16s", fontFamily: "var(--sans)", color: "var(--ink)", width: "100%" }}
+      aria-disabled={!hasRun}
+      style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "left", cursor: hasRun ? "pointer" : "default", opacity: hasRun ? 1 : 0.62, background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "var(--rad)", padding: "14px 16px", transition: ".16s", fontFamily: "var(--sans)", color: "var(--ink)", width: "100%" }}
     >
       <Gauge value={signal.confidence ?? 0} size={48} stroke={5} label="confidence" sub="" animate={false} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1021,9 +1001,9 @@ function SignalRow({ signal, onOpenSignal }: { signal: ApiSignal; onOpenSignal: 
         ) : signal.status === "plan_ready" && signal.currentPlan ? (
           <span style={{ color: "var(--warning)", fontSize: 12 }}>Plan awaiting founder decision</span>
         ) : null}
-        <span className="sg-meta">View details</span>
+        <span className="sg-meta">{hasRun ? "View run detail" : "No linked run"}</span>
       </div>
-      <span style={{ color: "var(--ink-faint)" }}><Icon name="arrow" size={18} /></span>
+      <span style={{ color: "var(--ink-faint)", opacity: hasRun ? 1 : 0.45 }}><Icon name="arrow" size={18} /></span>
     </button>
   );
 }
@@ -1188,161 +1168,6 @@ function RepoFact({ label, value, tone = "muted" }: { label: string; value: stri
   );
 }
 
-function SignalDetailDrawer({
-  signal,
-  signals,
-  onSelectSignal,
-  onClose,
-}: {
-  signal: ApiSignal | null;
-  signals: ApiSignal[];
-  onSelectSignal: (signalId: string) => void;
-  onClose: () => void;
-}) {
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (!signal) return;
-    previouslyFocusedElement.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeButtonRef.current?.focus();
-
-    return () => {
-      previouslyFocusedElement.current?.focus();
-      previouslyFocusedElement.current = null;
-    };
-  }, [signal]);
-
-  if (!signal) return null;
-
-  const evidenceItems = signal.evidenceItems ?? [];
-  const evidenceItemIds = signal.evidenceItemIds ?? [];
-  const evidenceReferenceCount = evidenceItemIds.length;
-  const otherSignals = signals.filter((otherSignal) => otherSignal._id !== signal._id);
-  const plan = signal.currentPlan;
-  const decision = plan?.approvalDecision;
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end backdrop-blur-sm" style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)" }} aria-label="Signal detail overlay">
-      <button type="button" aria-label="Close signal detail backdrop" className="absolute inset-0 cursor-default" onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="signal-detail-title"
-        className="relative h-full w-full max-w-2xl overflow-y-auto border-l p-6 sm:p-8" style={{ background: "var(--panel)", color: "var(--ink)", borderColor: "var(--line)", boxShadow: "var(--shadow-pop)" }}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.25em]" style={{ color: "var(--signal)" }}>Signal detail</p>
-            <h2 id="signal-detail-title" className="mt-3 text-3xl font-semibold tracking-tight">
-              {signal.title || "Untitled signal"}
-            </h2>
-            <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>{signal.summary || "Signal summary is not available yet."}</p>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            onClick={onClose}
-            className="rounded-full border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2" style={{ borderColor: "var(--line)", color: "var(--ink)", background: "var(--panel-2)", boxShadow: "0 0 0 0 var(--signal-soft)" }}
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <SignalDetailMetric label="Type" value={formatSignalLabel(signal.type)} />
-          <SignalDetailMetric label="Status" value={formatSignalLabel(signal.status)} />
-          <SignalDetailMetric label="Evidence" value={`${evidenceReferenceCount} item${evidenceReferenceCount === 1 ? "" : "s"}`} />
-          <SignalDetailMetric label="Strength" value={formatSignalPercent(signal.strength)} />
-          <SignalDetailMetric label="Confidence" value={formatSignalPercent(signal.confidence)} />
-          <SignalDetailMetric label="Updated" value={formatSignalDate(signal.updatedAt)} />
-          <SignalDetailMetric label="Created" value={formatSignalDate(signal.createdAt)} />
-        </div>
-
-        <section className="mt-8 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Evidence</p>
-          {evidenceItems.length > 0 ? (
-            <div className="mt-4 space-y-4">
-              {evidenceItems.map((item) => (
-                <article key={item.id} className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "var(--signal-soft)", color: "var(--signal)" }}>{formatSignalLabel(item.clusterType)}</span>
-                    <span className="rounded-full px-3 py-1 text-xs" style={{ background: "var(--panel-3)", color: "var(--ink-soft)" }}>Severity: {formatSignalLabel(item.severity)}</span>
-                    <span className="rounded-full px-3 py-1 text-xs" style={{ background: "var(--panel-3)", color: "var(--ink-soft)" }}>Decision: {formatSignalLabel(item.decision)}</span>
-                  </div>
-                  <h3 className="mt-4 text-lg font-semibold">{item.title || "Evidence item"}</h3>
-                  <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>{item.summary || "No evidence summary saved yet."}</p>
-                  <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-3" style={{ color: "var(--ink-faint)" }}>
-                    <SignalDetailInlineMetric label="Frequency" value={String(item.frequency ?? 0)} />
-                    <SignalDetailInlineMetric label="Confidence" value={formatSignalPercent(item.confidence)} />
-                    <SignalDetailInlineMetric label="Source run" value={item.runId || "Not linked"} />
-                  </dl>
-                </article>
-              ))}
-            </div>
-          ) : evidenceReferenceCount > 0 ? (
-            <div className="mt-4 rounded-2xl p-4 text-sm leading-6" style={{ background: "var(--inset)", color: "var(--ink-soft)" }}>
-              <p>Evidence references saved, but detailed evidence text is not available in this view yet.</p>
-              <p className="mt-2 text-xs" style={{ color: "var(--ink-faint)" }}>References: {evidenceItemIds.join(", ")}</p>
-            </div>
-          ) : (
-            <p className="mt-4 rounded-2xl p-4 text-sm" style={{ background: "var(--inset)", color: "var(--ink-faint)" }}>No evidence has been saved for this signal yet.</p>
-          )}
-        </section>
-
-        <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Recommended next step</p>
-          <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink)" }}>
-            {plan?.recommendedChange ?? "Signal is still collecting evidence before a next step is proposed."}
-          </p>
-          {plan ? (
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              <SignalDetailList title="Files to change" items={plan.filesToChange} />
-              <SignalDetailList title="Guardrails" items={plan.guardrails} />
-              <SignalDetailList title="Acceptance criteria" items={plan.acceptanceCriteria} />
-            </div>
-          ) : null}
-        </section>
-
-        <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Decision memory</p>
-          {decision ? (
-            <div className="mt-3 text-sm leading-6" style={{ color: "var(--ink)" }}>
-              <p>Founder {decision.action === "approve" ? "approved" : "rejected"} this plan on {formatSignalDate(decision.decidedAt)}.</p>
-              {decision.note ? <p className="mt-2" style={{ color: "var(--ink-soft)" }}>“{decision.note}”</p> : null}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm leading-6" style={{ color: "var(--ink-faint)" }}>No founder decision has been recorded for this signal yet.</p>
-          )}
-        </section>
-
-        {otherSignals.length > 0 ? (
-          <section className="mt-6 rounded-3xl border p-5" style={{ borderColor: "var(--line)", background: "var(--panel-2)" }}>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: "var(--signal)" }}>Other signals</p>
-            <p className="mt-2 text-sm leading-6" style={{ color: "var(--ink-faint)" }}>
-              Select another saved signal without leaving this detail drawer.
-            </p>
-            <div className="mt-4 space-y-2">
-              {otherSignals.map((otherSignal) => (
-                <button
-                  key={otherSignal._id}
-                  type="button"
-                  onClick={() => onSelectSignal(otherSignal._id)}
-                  className="w-full rounded-2xl p-3 text-left text-sm transition focus:outline-none focus-visible:ring-2" style={{ background: "var(--inset)", color: "var(--ink)", border: "1px solid var(--line)", outlineColor: "var(--signal)" }}
-                >
-                  <span className="font-semibold">{otherSignal.title || "Untitled signal"}</span>
-                  <span className="mt-1 block text-xs" style={{ color: "var(--ink-faint)" }}>
-                    {formatSignalLabel(otherSignal.status)} · {formatSignalDate(otherSignal.updatedAt)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-      </aside>
-    </div>
-  );
-}
 
 function FounderDecisionPanel({
   run,
@@ -1462,35 +1287,6 @@ function InfoGrid({ title, items }: { title: string; items: string[] }) {
         {items.length > 0 ? items.map((item) => <li key={item}>{item}</li>) : <li style={{ color: "var(--ink-faint)" }}>No items yet.</li>}
       </ul>
     </Panel>
-  );
-}
-
-function SignalDetailMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--ink-faint)" }}>{label}</p>
-      <p className="mt-2 break-words text-sm font-semibold" style={{ color: "var(--ink)" }}>{value}</p>
-    </div>
-  );
-}
-
-function SignalDetailInlineMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="font-semibold uppercase tracking-[0.12em]" style={{ color: "var(--ink-faint)" }}>{label}</p>
-      <p className="mt-1 break-words" style={{ color: "var(--ink-soft)" }}>{value}</p>
-    </div>
-  );
-}
-
-function SignalDetailList({ title, items = [] }: { title: string; items?: string[] }) {
-  return (
-    <div className="rounded-2xl p-4" style={{ background: "var(--inset)" }}>
-      <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: "var(--signal)" }}>{title}</p>
-      <ul className="mt-3 space-y-2 text-sm leading-6" style={{ color: "var(--ink-soft)" }}>
-        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li style={{ color: "var(--ink-faint)" }}>No items saved yet.</li>}
-      </ul>
-    </div>
   );
 }
 

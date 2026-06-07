@@ -41,6 +41,7 @@ function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
   const hasActionablePlan = signalStatus === "plan_ready" || signalStatus === "approved" || signalStatus === "rejected" || signalStatus === "implemented";
   const signal: SignalWithPlan = {
     _id: run._id,
+    runId: run._id,
     workspaceId: run.workspaceId,
     type: primaryCluster?.type ?? "friction",
     title,
@@ -107,6 +108,7 @@ export async function GET(request: Request) {
 
   const signalsWithPlans: SignalWithPlan[] = signals.map((signal) => ({
     ...signal,
+    runId: signal.evidenceItems?.find((item) => item.runId)?.runId,
     currentPlan: (signal._id && plansBySignalId.get(signal._id)) || (signal.currentPlanId ? plans.find((plan) => plan._id === signal.currentPlanId) : undefined),
   }));
 
