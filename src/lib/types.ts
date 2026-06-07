@@ -93,6 +93,7 @@ export type EvidenceItem = {
 
 export type ProductSignal = {
   _id?: string;
+  runId?: string;
   workspaceId?: string;
   repoConnectionId?: string;
   type: SignalType;
