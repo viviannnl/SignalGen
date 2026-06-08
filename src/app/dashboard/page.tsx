@@ -590,7 +590,7 @@ export default function DashboardPage() {
               isLoading={isLoading}
               onQueryChange={setSignalQuery}
               onFilterChange={setSignalFilter}
-              onOpenRun={(runId) => router.push(`/dashboard/runs/${runId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=all-signals`)}
+              onOpenSignal={(signalId) => router.push(`/dashboard/signals/${signalId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=all-signals`)}
               onGoGitHub={() => setDashboardTab("github")}
             />
           </section>
@@ -906,7 +906,7 @@ function AllSignalsPanel({
   isLoading,
   onQueryChange,
   onFilterChange,
-  onOpenRun,
+  onOpenSignal,
   onGoGitHub,
 }: {
   selectedRepo?: RepoConnection;
@@ -917,7 +917,7 @@ function AllSignalsPanel({
   isLoading: boolean;
   onQueryChange: (value: string) => void;
   onFilterChange: (value: SignalFilter) => void;
-  onOpenRun: (runId: string) => void;
+  onOpenSignal: (signalId: string) => void;
   onGoGitHub: () => void;
 }) {
   if (!selectedRepo) {
@@ -959,7 +959,7 @@ function AllSignalsPanel({
       ) : filteredSignals.length > 0 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {filteredSignals.map((signal) => (
-            <SignalRow key={signal._id} signal={signal} onOpenRun={onOpenRun} />
+            <SignalRow key={signal._id} signal={signal} onOpenSignal={onOpenSignal} />
           ))}
         </div>
       ) : signals.length > 0 ? (
@@ -971,18 +971,18 @@ function AllSignalsPanel({
   );
 }
 
-function SignalRow({ signal, onOpenRun }: { signal: ApiSignal; onOpenRun: (runId: string) => void }) {
+function SignalRow({ signal, onOpenSignal }: { signal: ApiSignal; onOpenSignal: (signalId: string) => void }) {
   const evidenceItemIds = signal.evidenceItemIds ?? [];
-  const runId = signal.runId;
-  const hasRun = Boolean(runId);
+  const signalId = signal._id;
+  const hasSignal = Boolean(signalId);
   return (
     <button
       type="button"
-      onClick={runId ? () => onOpenRun(runId) : undefined}
-      disabled={!hasRun}
+      onClick={signalId ? () => onOpenSignal(signalId) : undefined}
+      disabled={!hasSignal}
       className="sg-row"
-      aria-disabled={!hasRun}
-      style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "left", cursor: hasRun ? "pointer" : "default", opacity: hasRun ? 1 : 0.62, background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "var(--rad)", padding: "14px 16px", transition: ".16s", fontFamily: "var(--sans)", color: "var(--ink)", width: "100%" }}
+      aria-disabled={!hasSignal}
+      style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "left", cursor: hasSignal ? "pointer" : "default", opacity: hasSignal ? 1 : 0.62, background: "var(--panel-2)", border: "1px solid var(--line)", borderRadius: "var(--rad)", padding: "14px 16px", transition: ".16s", fontFamily: "var(--sans)", color: "var(--ink)", width: "100%" }}
     >
       <Gauge value={signal.confidence ?? 0} size={48} stroke={5} label="confidence" sub="" animate={false} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1001,9 +1001,9 @@ function SignalRow({ signal, onOpenRun }: { signal: ApiSignal; onOpenRun: (runId
         ) : signal.status === "plan_ready" && signal.currentPlan ? (
           <span style={{ color: "var(--warning)", fontSize: 12 }}>Plan awaiting founder decision</span>
         ) : null}
-        <span className="sg-meta">{hasRun ? "View run detail" : "No linked run"}</span>
+        <span className="sg-meta">{hasSignal ? "View signal detail" : "Signal unavailable"}</span>
       </div>
-      <span style={{ color: "var(--ink-faint)", opacity: hasRun ? 1 : 0.45 }}><Icon name="arrow" size={18} /></span>
+      <span style={{ color: "var(--ink-faint)", opacity: hasSignal ? 1 : 0.45 }}><Icon name="arrow" size={18} /></span>
     </button>
   );
 }

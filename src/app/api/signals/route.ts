@@ -5,54 +5,18 @@ import { getApiAuthContextOrResponse } from "../../../lib/api-auth";
 
 import { getSignalGenDb } from "@/lib/mongodb";
 import { findRepoConnectionById } from "@/lib/repo-connection-db";
+import { getEvidenceRunIds, chooseSignalRunId, type RelatedRun, type SignalWithPlan } from "../../../lib/signal-run-resolution";
 import { serializePlan, serializeSignal } from "@/lib/signal-memory-store";
-import type { ProductSignal, SignalGenRun, SignalPlan } from "@/lib/types";
+import type { SignalGenRun, SignalPlan } from "@/lib/types";
 import { buildWorkspaceRepoFilter, resolveRepoConnectionId } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
-
-type SignalWithPlan = ProductSignal & {
-  currentPlan?: SignalPlan;
-};
 
 function serializeRun(doc: Record<string, unknown>): SignalGenRun {
   return {
     ...doc,
     _id: doc._id?.toString(),
   } as SignalGenRun;
-}
-
-type RelatedRun = Pick<SignalGenRun, "_id" | "status" | "founderDecision" | "updatedAt">;
-
-function getEvidenceRunIds(signal: SignalWithPlan): string[] {
-  const runIds = [signal.runId, ...(signal.evidenceItems?.map((item) => item.runId) ?? [])].filter((id): id is string => Boolean(id));
-  return Array.from(new Set(runIds));
-}
-
-function chooseSignalRunId(signal: SignalWithPlan, relatedRunsById: Map<string, RelatedRun>): string | undefined {
-  const runIds = getEvidenceRunIds(signal);
-  const relatedRuns = runIds.map((runId) => relatedRunsById.get(runId)).filter((run): run is RelatedRun => Boolean(run));
-  const decisionAction = signal.currentPlan?.approvalDecision?.action;
-
-  const findRun = (predicate: (run: RelatedRun) => boolean) => relatedRuns.find(predicate);
-  const hasDecisionAction = (run: RelatedRun, action: "approve" | "reject") => !decisionAction || run.founderDecision?.action === action || !run.founderDecision;
-
-  const preferredRun = (() => {
-    if (signal.status === "approved") return findRun((run) => run.status === "approved" && hasDecisionAction(run, "approve"));
-    if (signal.status === "rejected") return findRun((run) => run.status === "rejected" && hasDecisionAction(run, "reject"));
-    if (signal.status === "implemented") return findRun((run) => run.status === "pr_created") ?? findRun((run) => run.status === "approved");
-    if (signal.status === "plan_ready") return findRun((run) => run.status === "plan_ready");
-    return undefined;
-  })();
-
-  if (preferredRun?._id) return preferredRun._id;
-
-  if (["approved", "rejected", "implemented", "plan_ready"].includes(signal.status)) {
-    // Decided/plan-ready signal rows are safer without navigation than linking to a run whose detail page shows the opposite state.
-    return undefined;
-  }
-
-  return runIds[0];
 }
 
 function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
