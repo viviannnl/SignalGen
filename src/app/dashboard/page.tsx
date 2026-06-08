@@ -573,6 +573,7 @@ export default function DashboardPage() {
                 onDecide={decideRun}
                 onRunAction={runImplementationAction}
                 onOpenRun={(runId) => router.push(`/dashboard/runs/${runId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`)}
+                onOpenSignal={(signalId) => router.push(`/dashboard/signals/${signalId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}`)}
                 onGoGitHub={() => setDashboardTab("github")}
               />
             </div>
@@ -813,6 +814,7 @@ function LatestSignalPanel({
   onDecide,
   onRunAction,
   onOpenRun,
+  onOpenSignal,
   onGoGitHub,
 }: {
   latestRun?: ApiRun;
@@ -826,6 +828,7 @@ function LatestSignalPanel({
   onDecide: (runId: string, action: "approve" | "reject") => Promise<void>;
   onRunAction: (runId: string, action: "start" | "prepare-pr") => Promise<void>;
   onOpenRun: (runId: string) => void;
+  onOpenSignal: (signalId: string) => void;
   onGoGitHub: () => void;
 }) {
   return (
@@ -886,8 +889,13 @@ function LatestSignalPanel({
 
           <FounderDecisionPanel run={latestRun} decidingRunId={decidingRunId} onDecide={onDecide} />
           <ImplementationPanel run={latestRun} implementingRunId={implementingRunId} onRunAction={onRunAction} />
-          <Button variant="signal" block onClick={() => onOpenRun(latestRun._id)} rightIcon={<Icon name="arrow" size={16} />}>
-            Open run detail
+          <Button
+            variant="signal"
+            block
+            onClick={() => (latestRun.primarySignalId ? onOpenSignal(latestRun.primarySignalId) : onOpenRun(latestRun._id))}
+            rightIcon={<Icon name="arrow" size={16} />}
+          >
+            {latestRun.primarySignalId ? "Open signal detail" : "Open run detail"}
           </Button>
         </div>
       ) : (

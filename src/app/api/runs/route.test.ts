@@ -17,12 +17,14 @@ function authedRequest(input: string, init: RequestInit = {}): Request {
 
 const mockInsertOne = vi.hoisted(() => vi.fn());
 const mockRunsFind = vi.hoisted(() => vi.fn());
+const mockSignalsFind = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/mongodb", () => ({
   getSignalGenDb: vi.fn(async () => ({
     collection: vi.fn((name: string) => {
-      if (name !== "runs") throw new Error(`Unexpected collection ${name}`);
-      return { insertOne: mockInsertOne, find: mockRunsFind };
+      if (name === "runs") return { insertOne: mockInsertOne, find: mockRunsFind };
+      if (name === "signals") return { find: mockSignalsFind };
+      throw new Error(`Unexpected collection ${name}`);
     }),
   })),
 }));
@@ -92,10 +94,18 @@ function mockFindToArray(docs: unknown[]) {
   return { sort, limit, toArray };
 }
 
+function mockSignalsToArray(docs: unknown[]) {
+  const toArray = vi.fn(async () => docs);
+  mockSignalsFind.mockReturnValue({ toArray });
+  return { toArray };
+}
+
 describe("/api/runs", () => {
   beforeEach(() => {
     mockInsertOne.mockReset();
     mockRunsFind.mockReset();
+    mockSignalsFind.mockReset();
+    mockSignalsToArray([]);
     mockInsertOne.mockResolvedValue({ insertedId: new ObjectId("64f0c1f2a3b4c5d6e7f80901") });
   });
 
@@ -136,5 +146,44 @@ describe("/api/runs", () => {
 
     expect(response.status).toBe(200);
     expect(mockRunsFind).toHaveBeenCalledWith(expect.objectContaining({ repoConnectionId: "repo-123" }));
+  });
+
+  it("includes the resolved primarySignalId for listed runs", async () => {
+    const runId = new ObjectId("64f0c1f2a3b4c5d6e7f80902");
+    const signalId = new ObjectId("64f0c1f2a3b4c5d6e7f80903");
+    mockFindToArray([
+      {
+        _id: runId,
+        workspaceId: "ws-test",
+        repoConnectionId: "repo-123",
+        signal: { title: "Fix onboarding confusion", summary: "", confidence: 0.9, evidence: [] },
+        signalClusters: [{ type: "friction", title: "Fix onboarding confusion" }],
+      },
+    ]);
+    mockSignalsToArray([
+      {
+        _id: signalId,
+        workspaceId: "ws-test",
+        repoConnectionId: "repo-123",
+        type: "friction",
+        title: "Fix onboarding confusion",
+        strength: 2,
+        updatedAt: "2026-01-02T00:00:00.000Z",
+        evidenceItems: [{ runId: runId.toString() }],
+      },
+    ]);
+
+    const response = await GET(authedRequest("http://localhost/api/runs?repoConnectionId=repo-123"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockSignalsFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-test",
+        repoConnectionId: "repo-123",
+        "evidenceItems.runId": { $in: [runId.toString()] },
+      }),
+    );
+    expect(body.runs[0]).toEqual(expect.objectContaining({ _id: runId.toString(), primarySignalId: signalId.toString() }));
   });
 });
