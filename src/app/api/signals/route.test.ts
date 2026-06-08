@@ -177,4 +177,160 @@ describe("GET /api/signals", () => {
       recommendedChange: "Store this signal in memory and wait for more evidence before proposing a product change.",
     });
   });
+
+  it("links an approved aggregate signal to the approved evidence run instead of an older review run", async () => {
+    const now = "2026-05-31T14:22:51.000Z";
+    const reviewRunId = new ObjectId("64f0c1f2a3b4c5d6e7f80911");
+    const approvedRunId = new ObjectId("64f0c1f2a3b4c5d6e7f80912");
+    const signalId = new ObjectId("64f0c1f2a3b4c5d6e7f80913");
+
+    mockFindToArray(mockSignalsFind, [
+      {
+        _id: signalId,
+        workspaceId: "demo",
+        repoConnectionId: "repo-123",
+        type: "feature_request",
+        title: "Direct Resume Submission",
+        summary: "A user requests direct resume submission.",
+        signalKey: "feature_request:direct-resume-submission",
+        evidenceItemIds: ["evidence-review", "evidence-approved"],
+        evidenceItems: [
+          { id: "evidence-review", runId: reviewRunId.toString(), clusterType: "feature_request", title: "Direct Resume Submission", summary: "Older evidence.", commentIds: [], frequency: 1, confidence: 0.93, severity: "medium", decision: "propose_plan", createdAt: now },
+          { id: "evidence-approved", runId: approvedRunId.toString(), clusterType: "feature_request", title: "Direct Resume Submission", summary: "Approved evidence.", commentIds: [], frequency: 1, confidence: 0.93, severity: "medium", decision: "propose_plan", createdAt: now },
+        ],
+        strength: 0.6,
+        confidence: 0.93,
+        status: "approved",
+        currentPlanId: "64f0c1f2a3b4c5d6e7f80914",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    mockFindToArray(mockPlansFind, [
+      {
+        _id: new ObjectId("64f0c1f2a3b4c5d6e7f80914"),
+        workspaceId: "demo",
+        repoConnectionId: "repo-123",
+        signalId: signalId.toString(),
+        recommendedChange: "Allow direct resume submission.",
+        filesToChange: [],
+        guardrails: [],
+        acceptanceCriteria: [],
+        status: "approved",
+        approvalDecision: { action: "approve", note: "Ship it.", decidedAt: now, decidedBy: "user-test" },
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    mockRunsFind
+      .mockReturnValueOnce({
+        toArray: vi.fn(async () => [
+          { _id: reviewRunId, workspaceId: "demo", repoConnectionId: "repo-123", status: "needs_review", updatedAt: now },
+          { _id: approvedRunId, workspaceId: "demo", repoConnectionId: "repo-123", status: "approved", founderDecision: { action: "approve", note: "Ship it.", decidedAt: now, decidedBy: "user-test" }, updatedAt: now },
+        ]),
+      })
+      .mockReturnValueOnce({ sort: vi.fn(() => ({ limit: vi.fn(() => ({ toArray: vi.fn(async () => []) })) })) });
+
+    const response = await GET(authedRequest("http://localhost/api/signals?repoConnectionId=repo-123"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.signals[0]).toMatchObject({
+      title: "Direct Resume Submission",
+      status: "approved",
+      runId: approvedRunId.toString(),
+    });
+    expect(body.signals[0].runId).not.toBe(reviewRunId.toString());
+  });
+
+  it("does not link a decided signal to a contradictory related run when no matching run exists", async () => {
+    const now = "2026-06-01T12:00:00.000Z";
+    const reviewRunId = new ObjectId("64f0c1f2a3b4c5d6e7f80931");
+    const signalId = new ObjectId("64f0c1f2a3b4c5d6e7f80932");
+
+    mockFindToArray(mockSignalsFind, [
+      {
+        _id: signalId,
+        workspaceId: "demo",
+        repoConnectionId: "repo-123",
+        type: "feature_request",
+        title: "Approved signal with stale run evidence",
+        summary: "The signal is approved, but its only related run is not approved.",
+        signalKey: "feature_request:approved-signal-with-stale-run-evidence",
+        evidenceItemIds: ["evidence-review"],
+        evidenceItems: [
+          { id: "evidence-review", runId: reviewRunId.toString(), clusterType: "feature_request", title: "Approved signal with stale run evidence", summary: "Older evidence.", commentIds: [], frequency: 1, confidence: 0.93, severity: "medium", decision: "propose_plan", createdAt: now },
+        ],
+        strength: 0.8,
+        confidence: 0.93,
+        status: "approved",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    mockFindToArray(mockPlansFind, []);
+    mockRunsFind
+      .mockReturnValueOnce({
+        toArray: vi.fn(async () => [
+          { _id: reviewRunId, workspaceId: "demo", repoConnectionId: "repo-123", status: "needs_review", updatedAt: now },
+        ]),
+      })
+      .mockReturnValueOnce({ sort: vi.fn(() => ({ limit: vi.fn(() => ({ toArray: vi.fn(async () => []) })) })) });
+
+    const response = await GET(authedRequest("http://localhost/api/signals?repoConnectionId=repo-123"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.signals[0]).toMatchObject({
+      status: "approved",
+    });
+    expect(body.signals[0].runId).toBeUndefined();
+  });
+
+  it("links an implemented aggregate signal to a PR-created run before falling back to approved evidence", async () => {
+    const now = "2026-06-01T12:00:00.000Z";
+    const approvedRunId = new ObjectId("64f0c1f2a3b4c5d6e7f80921");
+    const prCreatedRunId = new ObjectId("64f0c1f2a3b4c5d6e7f80922");
+    const signalId = new ObjectId("64f0c1f2a3b4c5d6e7f80923");
+
+    mockFindToArray(mockSignalsFind, [
+      {
+        _id: signalId,
+        workspaceId: "demo",
+        repoConnectionId: "repo-123",
+        type: "feature_request",
+        title: "Direct Resume Submission",
+        summary: "A user requests direct resume submission.",
+        signalKey: "feature_request:direct-resume-submission",
+        evidenceItemIds: ["evidence-approved", "evidence-pr"],
+        evidenceItems: [
+          { id: "evidence-approved", runId: approvedRunId.toString(), clusterType: "feature_request", title: "Direct Resume Submission", summary: "Approved evidence.", commentIds: [], frequency: 1, confidence: 0.93, severity: "medium", decision: "propose_plan", createdAt: now },
+          { id: "evidence-pr", runId: prCreatedRunId.toString(), clusterType: "feature_request", title: "Direct Resume Submission", summary: "PR evidence.", commentIds: [], frequency: 1, confidence: 0.93, severity: "medium", decision: "propose_plan", createdAt: now },
+        ],
+        strength: 0.8,
+        confidence: 0.93,
+        status: "implemented",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    mockFindToArray(mockPlansFind, []);
+    mockRunsFind
+      .mockReturnValueOnce({
+        toArray: vi.fn(async () => [
+          { _id: approvedRunId, workspaceId: "demo", repoConnectionId: "repo-123", status: "approved", updatedAt: now },
+          { _id: prCreatedRunId, workspaceId: "demo", repoConnectionId: "repo-123", status: "pr_created", updatedAt: now },
+        ]),
+      })
+      .mockReturnValueOnce({ sort: vi.fn(() => ({ limit: vi.fn(() => ({ toArray: vi.fn(async () => []) })) })) });
+
+    const response = await GET(authedRequest("http://localhost/api/signals?repoConnectionId=repo-123"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.signals[0]).toMatchObject({
+      status: "implemented",
+      runId: prCreatedRunId.toString(),
+    });
+  });
 });

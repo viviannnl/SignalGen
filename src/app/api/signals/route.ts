@@ -1,3 +1,4 @@
+import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { getApiAuthContextOrResponse } from "../../../lib/api-auth";
@@ -19,6 +20,39 @@ function serializeRun(doc: Record<string, unknown>): SignalGenRun {
     ...doc,
     _id: doc._id?.toString(),
   } as SignalGenRun;
+}
+
+type RelatedRun = Pick<SignalGenRun, "_id" | "status" | "founderDecision" | "updatedAt">;
+
+function getEvidenceRunIds(signal: SignalWithPlan): string[] {
+  const runIds = [signal.runId, ...(signal.evidenceItems?.map((item) => item.runId) ?? [])].filter((id): id is string => Boolean(id));
+  return Array.from(new Set(runIds));
+}
+
+function chooseSignalRunId(signal: SignalWithPlan, relatedRunsById: Map<string, RelatedRun>): string | undefined {
+  const runIds = getEvidenceRunIds(signal);
+  const relatedRuns = runIds.map((runId) => relatedRunsById.get(runId)).filter((run): run is RelatedRun => Boolean(run));
+  const decisionAction = signal.currentPlan?.approvalDecision?.action;
+
+  const findRun = (predicate: (run: RelatedRun) => boolean) => relatedRuns.find(predicate);
+  const hasDecisionAction = (run: RelatedRun, action: "approve" | "reject") => !decisionAction || run.founderDecision?.action === action || !run.founderDecision;
+
+  const preferredRun = (() => {
+    if (signal.status === "approved") return findRun((run) => run.status === "approved" && hasDecisionAction(run, "approve"));
+    if (signal.status === "rejected") return findRun((run) => run.status === "rejected" && hasDecisionAction(run, "reject"));
+    if (signal.status === "implemented") return findRun((run) => run.status === "pr_created") ?? findRun((run) => run.status === "approved");
+    if (signal.status === "plan_ready") return findRun((run) => run.status === "plan_ready");
+    return undefined;
+  })();
+
+  if (preferredRun?._id) return preferredRun._id;
+
+  if (["approved", "rejected", "implemented", "plan_ready"].includes(signal.status)) {
+    // Decided/plan-ready signal rows are safer without navigation than linking to a run whose detail page shows the opposite state.
+    return undefined;
+  }
+
+  return runIds[0];
 }
 
 function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {
@@ -106,10 +140,27 @@ export async function GET(request: Request) {
     }
   }
 
-  const signalsWithPlans: SignalWithPlan[] = signals.map((signal) => ({
+  const rawSignalsWithPlans: SignalWithPlan[] = signals.map((signal) => ({
     ...signal,
     runId: signal.evidenceItems?.find((item) => item.runId)?.runId,
     currentPlan: (signal._id && plansBySignalId.get(signal._id)) || (signal.currentPlanId ? plans.find((plan) => plan._id === signal.currentPlanId) : undefined),
+  }));
+
+  const relatedRunObjectIds = Array.from(new Set(rawSignalsWithPlans.flatMap(getEvidenceRunIds)))
+    .filter((runId) => ObjectId.isValid(runId))
+    .map((runId) => new ObjectId(runId));
+  const relatedRunDocs = relatedRunObjectIds.length > 0
+    ? await db.collection("runs").find({ ...workspaceFilter, _id: { $in: relatedRunObjectIds } }).toArray()
+    : [];
+  const relatedRunsById = new Map(
+    relatedRunDocs.map((doc) => {
+      const run = serializeRun(doc) as RelatedRun;
+      return [run._id, run] as const;
+    }).filter((entry): entry is readonly [string, RelatedRun] => Boolean(entry[0])),
+  );
+  const signalsWithPlans = rawSignalsWithPlans.map((signal) => ({
+    ...signal,
+    runId: chooseSignalRunId(signal, relatedRunsById),
   }));
 
   const representedRunIds = new Set(signalsWithPlans.flatMap((signal) => signal.evidenceItems?.map((item) => item.runId) ?? []));
