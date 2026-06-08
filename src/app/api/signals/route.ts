@@ -45,7 +45,14 @@ function chooseSignalRunId(signal: SignalWithPlan, relatedRunsById: Map<string, 
     return undefined;
   })();
 
-  return preferredRun?._id ?? runIds[0];
+  if (preferredRun?._id) return preferredRun._id;
+
+  if (["approved", "rejected", "implemented", "plan_ready"].includes(signal.status)) {
+    // Decided/plan-ready signal rows are safer without navigation than linking to a run whose detail page shows the opposite state.
+    return undefined;
+  }
+
+  return runIds[0];
 }
 
 function fallbackSignalFromRun(run: SignalGenRun): SignalWithPlan | null {

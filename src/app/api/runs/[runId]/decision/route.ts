@@ -75,7 +75,7 @@ export async function POST(request: Request, context: DecisionRouteContext) {
         decidedRun = serializeRun(response);
         const signalStatus = update.status;
         const planStatus = body.action === "approve" ? "approved" : "rejected";
-        const relatedSignalFilter = { workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, "evidenceItems.runId": runId };
+        const relatedSignalFilter = { workspaceId: run.workspaceId, repoConnectionId: run.repoConnectionId, "evidenceItems.runId": runId, status: "plan_ready" };
         const signals = await db.collection("signals").find(relatedSignalFilter, { session }).toArray();
         const signalIds = signals.map((signal) => signal._id?.toString()).filter((id): id is string => Boolean(id));
         if (signalIds.length > 0) {
