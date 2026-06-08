@@ -21,4 +21,12 @@ describe("dashboard signal detail page navigation source", () => {
     expect(signalPageSource).toContain("/api/signals/${signalId}");
     expect(signalPageSource).not.toContain("run.signal.title");
   });
+
+  it("hides lifecycle status badges for noise and praise signals while keeping type badges", () => {
+    expect(dashboardSource).toContain('signal.type !== "noise" && signal.type !== "praise"');
+    expect(dashboardSource).toContain("<Pill variant={signalTypeVariant(signal.type)}>{formatSignalLabel(signal.type)}</Pill>");
+    expect(dashboardSource).toContain("Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}");
+    expect(signalPageSource).toContain('signal.type !== "noise" && signal.type !== "praise"');
+    expect(signalPageSource).toContain("<Pill variant={meta.variant}>{meta.label}</Pill>");
+  });
 });

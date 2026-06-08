@@ -993,7 +993,9 @@ function SignalRow({ signal, onOpenSignal }: { signal: ApiSignal; onOpenSignal: 
       <div className="signal-row-meta" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none" }}>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <Pill variant={signalTypeVariant(signal.type)}>{formatSignalLabel(signal.type)}</Pill>
-          <Pill variant={signalStatusVariant(signal.status)} dot>{formatSignalLabel(signal.status)}</Pill>
+          {signal.type !== "noise" && signal.type !== "praise" ? (
+            <Pill variant={signalStatusVariant(signal.status)} dot>{formatSignalLabel(signal.status)}</Pill>
+          ) : null}
         </div>
         <span className="sg-meta">Strength {formatSignalPercent(signal.strength)} · Confidence {formatSignalPercent(signal.confidence)}</span>
         {signal.currentPlan?.approvalDecision ? (
