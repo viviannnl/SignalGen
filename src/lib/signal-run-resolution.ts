@@ -15,6 +15,51 @@ function normalizeTitle(value?: string) {
   return value?.trim().toLowerCase() ?? "";
 }
 
+function toIdString(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "toString" in value) return value.toString();
+  return undefined;
+}
+
+function signalEvidenceReferencesRun(signal: Pick<ProductSignal, "evidenceItems">, runId: string) {
+  return signal.evidenceItems?.some((item) => item.runId === runId) ?? false;
+}
+
+function primaryRunSignalType(run: Pick<SignalGenRun, "signal" | "signalClusters">) {
+  const primaryTitle = normalizeTitle(run.signal?.title);
+  const titleMatchedCluster = run.signalClusters?.find((cluster) => normalizeTitle(cluster.title) === primaryTitle);
+  return titleMatchedCluster?.type ?? run.signalClusters?.[0]?.type;
+}
+
+function compareSignalsForRun(left: ProductSignal, right: ProductSignal, run: Pick<SignalGenRun, "signal" | "signalClusters">) {
+  const runType = primaryRunSignalType(run);
+  const leftTypeMatch = runType && left.type === runType ? 1 : 0;
+  const rightTypeMatch = runType && right.type === runType ? 1 : 0;
+  if (leftTypeMatch !== rightTypeMatch) return rightTypeMatch - leftTypeMatch;
+
+  const leftStrength = Number.isFinite(left.strength) ? left.strength : 0;
+  const rightStrength = Number.isFinite(right.strength) ? right.strength : 0;
+  if (leftStrength !== rightStrength) return rightStrength - leftStrength;
+
+  const leftUpdatedAt = Date.parse(left.updatedAt || "");
+  const rightUpdatedAt = Date.parse(right.updatedAt || "");
+  return (Number.isFinite(rightUpdatedAt) ? rightUpdatedAt : 0) - (Number.isFinite(leftUpdatedAt) ? leftUpdatedAt : 0);
+}
+
+export function findPrimarySignalIdForRun(run: Pick<SignalGenRun, "_id" | "signal" | "signalClusters">, candidateSignals: ProductSignal[]): string | undefined {
+  const runId = toIdString(run._id);
+  if (!runId) return undefined;
+
+  const signalsForRun = candidateSignals.filter((signal) => signalEvidenceReferencesRun(signal, runId));
+  if (signalsForRun.length === 0) return undefined;
+
+  const runTitle = normalizeTitle(run.signal?.title);
+  const exactTitleMatches = runTitle ? signalsForRun.filter((signal) => normalizeTitle(signal.title) === runTitle) : [];
+  const preferredPool = exactTitleMatches.length > 0 ? exactTitleMatches : signalsForRun;
+  const [primarySignal] = [...preferredPool].sort((left, right) => compareSignalsForRun(left, right, run));
+  return toIdString(primarySignal?._id);
+}
+
 function rankByPrimaryTitle(signal: SignalWithPlan, runs: RelatedRun[]) {
   const signalTitle = normalizeTitle(signal.title);
   if (!signalTitle) return runs;

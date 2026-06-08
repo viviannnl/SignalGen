@@ -129,6 +129,7 @@ export type SignalPlan = {
 
 export type SignalGenRun = {
   _id?: string;
+  primarySignalId?: string;
   source: "dashboard_upload";
   status: SignalGenRunStatus;
   createdAt: string;

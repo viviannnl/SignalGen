@@ -47,4 +47,10 @@ describe("dashboard v3 shell", () => {
     expect(source).toContain("validateDashboardScreenshotFiles");
     expect(source).toContain('formData.append("screenshots", file)');
   });
+
+  it("opens the canonical signal detail from the Latest signal card when primarySignalId is available", () => {
+    expect(source).toContain("latestRun.primarySignalId ? onOpenSignal(latestRun.primarySignalId) : onOpenRun(latestRun._id)");
+    expect(source).toContain("/dashboard/signals/${signalId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}");
+    expect(source).toContain("/dashboard/runs/${runId}?repoConnectionId=${encodeURIComponent(selectedRepoConnectionId)}&tab=${activeTab}");
+  });
 });

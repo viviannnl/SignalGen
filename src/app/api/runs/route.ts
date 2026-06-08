@@ -13,6 +13,8 @@ import {
 import { getSignalGenDb } from "@/lib/mongodb";
 import { findRepoConnectionById } from "@/lib/repo-connection-db";
 import { buildWorkspaceRepoFilter, resolveRepoConnectionId } from "@/lib/workspace";
+import { findPrimarySignalIdForRun } from "../../../lib/signal-run-resolution";
+import type { ProductSignal, SignalGenRun } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +28,24 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function serializeRun(run: Record<string, unknown>) {
+function serializeRun(run: SignalGenRun & Record<string, unknown>): SignalGenRun & { _id?: string } {
   return {
     ...run,
     _id: run._id?.toString(),
   };
+}
+
+function runIdString(run: Record<string, unknown>) {
+  return run._id?.toString();
+}
+
+function addSignalToRunMap(runSignalsByRunId: Map<string, ProductSignal[]>, signal: ProductSignal) {
+  const runIds = signal.evidenceItems?.map((item) => item.runId).filter((id): id is string => Boolean(id)) ?? [];
+  for (const runId of new Set(runIds)) {
+    const existing = runSignalsByRunId.get(runId) ?? [];
+    existing.push(signal);
+    runSignalsByRunId.set(runId, existing);
+  }
 }
 
 function safeFileName(name: string) {
@@ -128,9 +143,28 @@ export async function GET(request: Request) {
     throw error;
   }
   const db = await getSignalGenDb();
-  const runs = await db.collection("runs").find(buildWorkspaceRepoFilter(workspaceId, repoConnectionId)).sort({ createdAt: -1 }).limit(20).toArray();
+  const repoFilter = buildWorkspaceRepoFilter(workspaceId, repoConnectionId);
+  const runs = await db.collection("runs").find(repoFilter).sort({ createdAt: -1 }).limit(20).toArray();
+  const runIds = runs.map(runIdString).filter((runId): runId is string => Boolean(runId));
+  const runSignalsByRunId = new Map<string, ProductSignal[]>();
 
-  return NextResponse.json({ runs: runs.map(serializeRun) });
+  if (runIds.length > 0) {
+    const candidateSignals = (await db
+      .collection("signals")
+      .find({ ...repoFilter, "evidenceItems.runId": { $in: runIds } })
+      .toArray()) as unknown as ProductSignal[];
+    for (const signal of candidateSignals) {
+      addSignalToRunMap(runSignalsByRunId, signal);
+    }
+  }
+
+  return NextResponse.json({
+    runs: runs.map((run) => {
+      const serializedRun = serializeRun(run as unknown as SignalGenRun & Record<string, unknown>);
+      const primarySignalId = serializedRun._id ? findPrimarySignalIdForRun(serializedRun, runSignalsByRunId.get(serializedRun._id) ?? []) : undefined;
+      return primarySignalId ? { ...serializedRun, primarySignalId } : serializedRun;
+    }),
+  });
 }
 
 export async function POST(request: Request) {
