@@ -1,35 +1,24 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 const dashboardSource = readFileSync(join(process.cwd(), "src/app/dashboard/page.tsx"), "utf8");
+const signalPagePath = join(process.cwd(), "src/app/dashboard/signals/[signalId]/page.tsx");
+const signalPageSource = existsSync(signalPagePath) ? readFileSync(signalPagePath, "utf8") : "";
 
-describe("dashboard signal detail drawer source", () => {
-  it("keeps all-signals rows clickable and opens an accessible signal detail drawer", () => {
-    expect(dashboardSource).toContain("View details");
-    expect(dashboardSource).toContain("setSelectedSignalId");
-    expect(dashboardSource).toContain('type="button"');
-    expect(dashboardSource).toContain('role="dialog"');
-    expect(dashboardSource).toContain("Signal detail");
+describe("dashboard signal detail page navigation source", () => {
+  it("routes All Signals rows to the signal-centric detail page instead of run detail", () => {
+    expect(dashboardSource).toContain("onOpenSignal");
+    expect(dashboardSource).toContain("/dashboard/signals/${signalId}");
+    expect(dashboardSource).toContain("View signal detail");
+    expect(dashboardSource).not.toContain("View run detail");
+    expect(dashboardSource).not.toContain("No linked run");
   });
 
-  it("documents evidence, next-step, and founder decision sections in the drawer", () => {
-    expect(dashboardSource).toContain("Evidence");
-    expect(dashboardSource).toContain("Recommended next step");
-    expect(dashboardSource).toContain("Decision memory");
-    expect(dashboardSource).toContain("Evidence references saved");
-  });
-
-  it("supports keyboard dismissal with Escape", () => {
-    expect(dashboardSource).toContain('event.key === "Escape"');
-    expect(dashboardSource).toContain("window.addEventListener");
-    expect(dashboardSource).toContain("window.removeEventListener");
-  });
-
-  it("lets users select another signal from the open drawer and tolerates missing evidence references", () => {
-    expect(dashboardSource).toContain("onSelectSignal");
-    expect(dashboardSource).toContain("Other signals");
-    expect(dashboardSource).toContain("signal.evidenceItemIds ?? []");
+  it("renders the persisted ProductSignal title and never the embedded run.signal title as the signal page headline", () => {
+    expect(signalPageSource).toContain("signal.title");
+    expect(signalPageSource).toContain("/api/signals/${signalId}");
+    expect(signalPageSource).not.toContain("run.signal.title");
   });
 });

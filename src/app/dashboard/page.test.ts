@@ -35,8 +35,8 @@ describe("dashboard v3 shell", () => {
     expect(source).toContain("Gauge");
     expect(source).toContain("Tabs");
     expect(source).toContain("Choose a repo first");
+    expect(source).toContain("/dashboard/signals/${signalId}");
     expect(source).toContain("/dashboard/memory");
-    expect(source).not.toContain("/dashboard/signals/");
   });
 
   it("preserves dashboard screenshot upload limits before posting to the existing runs endpoint", () => {
