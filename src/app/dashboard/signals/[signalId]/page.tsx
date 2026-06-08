@@ -253,7 +253,9 @@ function SignalDetailContent({ authConfigured, authReady, isSignedIn, onSignIn }
                 <div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
                     <Pill variant={meta.variant}>{meta.label}</Pill>
-                    <Pill variant={status.variant} dot>{status.label}</Pill>
+                    {signal.type !== "noise" && signal.type !== "praise" ? (
+                      <Pill variant={status.variant} dot>{status.label}</Pill>
+                    ) : null}
                   </div>
                   <h1 className="sg-display" style={{ fontSize: "clamp(34px,5vw,64px)", lineHeight: 0.95, margin: 0 }}>{signal.title}</h1>
                   <p style={{ margin: "16px 0 0", color: "var(--ink-soft)", lineHeight: 1.6, fontSize: 16, maxWidth: 780 }}>{signal.summary}</p>
