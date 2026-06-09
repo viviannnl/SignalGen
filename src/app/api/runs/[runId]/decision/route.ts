@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { getApiAuthContextOrResponse } from "../../../../../lib/api-auth";
+import { createImplementationJobForRun } from "../../../../../lib/implementation-job-create";
 
 import { applyFounderDecision, FounderDecisionError } from "@/lib/founder-decision";
 import { getSignalGenClient, getSignalGenDb } from "@/lib/mongodb";
@@ -99,7 +100,40 @@ export async function POST(request: Request, context: DecisionRouteContext) {
       return NextResponse.json({ ok: false, error: "Run could not be decided because it is no longer plan-ready." }, { status: 409 });
     }
 
-    return NextResponse.json({ ok: true, run: decidedRun });
+    let implementationJobId: string | undefined;
+    if (body.action === "approve") {
+      const runWorkspaceId = run.workspaceId;
+      const runRepoConnectionId = run.repoConnectionId;
+      if (typeof runWorkspaceId !== "string" || typeof runRepoConnectionId !== "string") {
+        console.error("SignalGen implementation job was not queued after approval because run workspace/repo context is missing", {
+          runId,
+        });
+      } else {
+        try {
+          const jobResult = await createImplementationJobForRun({
+            workspaceId: runWorkspaceId,
+            runId,
+            repoConnectionId: runRepoConnectionId,
+            approvedByUserId: userId,
+          });
+          if (jobResult.status === "created" || jobResult.status === "duplicate") {
+            implementationJobId = jobResult.job._id;
+          } else {
+            console.error("SignalGen implementation job was not queued after approval", {
+              runId,
+              status: jobResult.status,
+            });
+          }
+        } catch (error) {
+          console.error("SignalGen implementation job creation failed after approval", {
+            runId,
+            errorName: error instanceof Error ? error.name : typeof error,
+          });
+        }
+      }
+    }
+
+    return NextResponse.json({ ok: true, run: decidedRun, implementationJobId });
   } catch (error) {
     if (error instanceof FounderDecisionError) {
       return NextResponse.json({ ok: false, error: error.message }, { status: error.statusCode });
