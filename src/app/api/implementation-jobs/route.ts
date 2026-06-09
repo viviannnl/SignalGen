@@ -3,11 +3,9 @@ import { NextResponse } from "next/server";
 
 import { getApiAuthContextOrResponse } from "../../../lib/api-auth";
 
-import { writeAuditLog } from "@/lib/audit-log-db";
-import { createImplementationJob, findImplementationJobByIdempotencyKey } from "@/lib/implementation-job-db";
+import { createImplementationJobForRun } from "../../../lib/implementation-job-create";
 import { getSignalGenDb } from "@/lib/mongodb";
-import { findRepoConnectionById } from "@/lib/repo-connection-db";
-import type { AuditLog, ImplementationJob } from "@/lib/types";
+import type { ImplementationJob } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,17 +24,6 @@ function isNonEmptyString(value: unknown): value is string {
 
 function logJobError(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : typeof error });
-}
-
-async function safeWriteAuditLog(entry: Omit<AuditLog, "_id">): Promise<void> {
-  try {
-    await writeAuditLog(entry);
-  } catch (error) {
-    console.error("Failed to write implementation job audit log", {
-      action: entry.action,
-      errorName: error instanceof Error ? error.name : typeof error,
-    });
-  }
 }
 
 export async function POST(
@@ -73,50 +60,27 @@ export async function POST(
       return NextResponse.json({ error: "Implementation requires founder approval." }, { status: 409 });
     }
 
-    const repoConnection = await findRepoConnectionById(repoConnectionId);
-    if (!repoConnection || repoConnection.workspaceId !== workspaceId) {
-      return NextResponse.json({ error: "Repo connection not found." }, { status: 404 });
-    }
-    if (repoConnection.status !== "connected") {
-      return NextResponse.json({ error: "Repo connection is not connected." }, { status: 409 });
-    }
-
-    const idempotencyKey = `${workspaceId}:${runId}`;
-
-    const existing = await findImplementationJobByIdempotencyKey(idempotencyKey, workspaceId);
-    if (existing && existing.status !== "cancelled") {
-      return NextResponse.json({ error: "DuplicateJob", jobId: existing._id }, { status: 409 });
-    }
-
-    const now = new Date().toISOString();
-    const job = await createImplementationJob({
+    const result = await createImplementationJobForRun({
       workspaceId,
       runId,
       repoConnectionId,
       approvedByUserId: userId,
-      approvedAt: now,
-      branchName: isNonEmptyString(branchName) ? branchName : `signalgen/job-${runId}`,
-      signalId: isNonEmptyString(signalId) ? signalId : undefined,
-      planId: isNonEmptyString(planId) ? planId : undefined,
-      idempotencyKey,
-      status: "queued",
-      attempts: 0,
-      logs: [],
-      createdAt: now,
-      updatedAt: now,
+      branchName,
+      signalId,
+      planId,
     });
 
-    await safeWriteAuditLog({
-      workspaceId,
-      actorUserId: job.approvedByUserId,
-      action: "implementation_job.created",
-      resourceType: "implementation_job",
-      resourceId: job._id!,
-      detail: { runId: job.runId, repoConnectionId: job.repoConnectionId, branchName: job.branchName },
-      createdAt: job.createdAt,
-    });
+    if (result.status === "repo_not_found") {
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    }
+    if (result.status === "repo_not_connected") {
+      return NextResponse.json({ error: result.error }, { status: 409 });
+    }
+    if (result.status === "duplicate") {
+      return NextResponse.json({ error: "DuplicateJob", jobId: result.job._id }, { status: 409 });
+    }
 
-    return NextResponse.json({ job }, { status: 201 });
+    return NextResponse.json({ job: result.job }, { status: 201 });
   } catch (error) {
     logJobError("Failed to create implementation job", error);
     return NextResponse.json({ error: "Implementation job could not be created. Please try again." }, { status: 503 });
