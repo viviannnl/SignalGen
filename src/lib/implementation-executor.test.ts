@@ -2,15 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MockGitHubClient, type GitHubClient } from "./github-client";
 import type { GateContext } from "./implementation-gates";
-import type { ImplementationJob, RepoConnection } from "./types";
+import type { ImplementationJob, RepoConnection, SignalGenRun } from "./types";
 
 const mockFindImplementationJobById = vi.hoisted(() => vi.fn());
 const mockUpdateImplementationJob = vi.hoisted(() => vi.fn());
+const mockFindRunById = vi.hoisted(() => vi.fn());
 const mockWriteAuditLog = vi.hoisted(() => vi.fn());
 
 vi.mock("./implementation-job-db", () => ({
   findImplementationJobById: mockFindImplementationJobById,
   updateImplementationJob: mockUpdateImplementationJob,
+}));
+
+vi.mock("./signal-run-db", () => ({
+  findRunById: mockFindRunById,
 }));
 
 vi.mock("./audit-log-db", () => ({
@@ -64,6 +69,39 @@ function buildValidJob(overrides: Partial<ImplementationJob> = {}): Implementati
   };
 }
 
+function buildValidRun(overrides: Partial<SignalGenRun> = {}): SignalGenRun {
+  return {
+    _id: "run-1",
+    source: "dashboard_upload",
+    status: "approved",
+    workspaceId: "ws-test",
+    repoConnectionId: CONN_ID,
+    screenshotNames: [],
+    comments: [],
+    createdAt: NOW,
+    updatedAt: NOW,
+    signal: {
+      title: "Users are confused after upload",
+      summary: "Feedback says the empty state is unclear.",
+      confidence: 0.9,
+      evidence: ["I don't know what to upload next"],
+    },
+    plan: {
+      recommendedChange: "Add clear upload guidance.",
+      filesToChange: ["src/app/page.tsx"],
+      guardrails: ["Do not touch secrets, auth, billing, or database migrations."],
+      acceptanceCriteria: ["Empty state explains the next upload step."],
+    },
+    founderDecision: {
+      action: "approve",
+      note: "Please make this clearer.",
+      decidedAt: NOW,
+      decidedBy: "user-approver",
+    },
+    ...overrides,
+  };
+}
+
 function buildValidContext(overrides: Partial<GateContext> = {}): GateContext {
   return {
     workspaceId: "ws-test",
@@ -95,8 +133,10 @@ describe("executeImplementationJob", () => {
     client = new MockGitHubClient();
     mockFindImplementationJobById.mockReset();
     mockUpdateImplementationJob.mockReset();
+    mockFindRunById.mockReset();
     mockWriteAuditLog.mockReset();
     mockUpdateImplementationJob.mockResolvedValue(null);
+    mockFindRunById.mockResolvedValue(buildValidRun());
     mockWriteAuditLog.mockResolvedValue(undefined);
   });
 
@@ -180,21 +220,122 @@ describe("executeImplementationJob", () => {
     expect(client.calls).toHaveLength(0);
   });
 
-  it("calls createBranch, createCommit, openDraftPr, marks succeeded, and writes succeeded audit when all gates pass", async () => {
+  it("calls createCommit with generated changes, opens draft PR, marks succeeded, and persists codegen details", async () => {
     mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    const codegen = vi.fn(async () => ({
+      status: "success" as const,
+      summary: "Updated upload empty-state copy.",
+      changes: [{ path: "src/app/page.tsx", content: "export default function Page() { return <main>Upload feedback</main>; }\n" }],
+    }));
 
-    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client);
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client, { codegen });
 
     expect(result.success).toBe(true);
+    expect(codegen).toHaveBeenCalledWith(expect.objectContaining({
+      plan: buildValidRun().plan,
+      signal: buildValidRun().signal,
+      githubClient: client,
+      owner: "viviannnl",
+      repo: "test-repo",
+      baseRef: "main",
+    }));
     expect(client.calls).toHaveLength(3);
     expect(client.calls[0]?.method).toBe("createBranch");
     expect(client.calls[1]?.method).toBe("createCommit");
     expect(client.calls[2]?.method).toBe("openDraftPr");
+    expect(client.calls[1]?.params).toMatchObject({
+      changes: [{ path: "src/app/page.tsx", content: "export default function Page() { return <main>Upload feedback</main>; }\n" }],
+    });
+    expect(JSON.stringify(client.calls[2]?.params)).toContain("Updated upload empty-state copy.");
+    expect(JSON.stringify(client.calls[2]?.params)).toContain("src/app/page.tsx");
 
     const finalUpdate = mockUpdateImplementationJob.mock.calls.at(-1)?.[1];
     expect(finalUpdate?.status).toBe("succeeded");
     expect(finalUpdate?.prUrl).toContain("github.com");
+    expect(finalUpdate?.changedFiles).toEqual(["src/app/page.tsx"]);
+    expect(finalUpdate?.codegenSummary).toBe("Updated upload empty-state copy.");
     expect(mockWriteAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "implementation_job.succeeded" }));
+  });
+
+  it("marks requires_attention and skips commit/PR when codegen returns no_changes", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    const codegen = vi.fn(async () => ({ status: "no_changes" as const, reason: "No valid changes remained after guardrail filtering." }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client, { codegen });
+
+    expect(result).toEqual({ success: false, error: "CodegenNoChanges: No valid changes remained after guardrail filtering." });
+    expect(client.calls.map((call) => call.method)).toEqual(["createBranch"]);
+    expect(mockUpdateImplementationJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        status: "requires_attention",
+        errorClass: "CodegenNoChanges",
+        errorMessage: "No valid changes remained after guardrail filtering.",
+        logs: expect.arrayContaining(["Codegen requires attention: No valid changes remained after guardrail filtering."]),
+      }),
+    );
+  });
+
+  it("marks requires_attention and skips commit/PR when codegen fails", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    const codegen = vi.fn(async () => ({ status: "failed" as const, reason: "GEMINI_API_KEY is not configured." }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client, { codegen });
+
+    expect(result).toEqual({ success: false, error: "CodegenFailed: GEMINI_API_KEY is not configured." });
+    expect(client.calls.map((call) => call.method)).toEqual(["createBranch"]);
+    expect(mockUpdateImplementationJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        status: "requires_attention",
+        errorClass: "CodegenFailed",
+        errorMessage: "GEMINI_API_KEY is not configured.",
+      }),
+    );
+  });
+
+  it("marks requires_attention and skips commit/PR when the run is missing", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    mockFindRunById.mockResolvedValue(null);
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client, {
+      codegen: vi.fn(async () => ({ status: "success" as const, summary: "unused", changes: [{ path: "src/app/page.tsx", content: "unused" }] })),
+    });
+
+    expect(result).toEqual({ success: false, error: "CodegenFailed: Approved run or implementation plan was not found." });
+    expect(client.calls.map((call) => call.method)).toEqual(["createBranch"]);
+    expect(mockUpdateImplementationJob).toHaveBeenCalledWith(
+      JOB_ID,
+      expect.objectContaining({
+        status: "requires_attention",
+        errorClass: "CodegenFailed",
+        errorMessage: "Approved run or implementation plan was not found.",
+      }),
+    );
+  });
+
+  it("marks requires_attention and skips codegen when the run is not approved for this job", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    mockFindRunById.mockResolvedValue(buildValidRun({ status: "plan_ready" }));
+    const codegen = vi.fn(async () => ({ status: "success" as const, summary: "unused", changes: [{ path: "src/app/page.tsx", content: "unused" }] }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client, { codegen });
+
+    expect(result).toEqual({ success: false, error: "CodegenFailed: Approved run or implementation plan was not found." });
+    expect(codegen).not.toHaveBeenCalled();
+    expect(client.calls.map((call) => call.method)).toEqual(["createBranch"]);
+  });
+
+  it("marks requires_attention and skips codegen when the run belongs to another workspace or repo connection", async () => {
+    mockFindImplementationJobById.mockResolvedValue(buildValidJob());
+    mockFindRunById.mockResolvedValue(buildValidRun({ workspaceId: "other-ws", repoConnectionId: "other-conn" }));
+    const codegen = vi.fn(async () => ({ status: "success" as const, summary: "unused", changes: [{ path: "src/app/page.tsx", content: "unused" }] }));
+
+    const result = await executeImplementationJob(JOB_ID, buildValidContext(), client, { codegen });
+
+    expect(result).toEqual({ success: false, error: "CodegenFailed: Approved run or implementation plan was not found." });
+    expect(codegen).not.toHaveBeenCalled();
+    expect(client.calls.map((call) => call.method)).toEqual(["createBranch"]);
   });
 
   it("sets status to failed and writes retry_scheduled audit for retry-eligible error under max attempts", async () => {

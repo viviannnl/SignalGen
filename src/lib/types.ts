@@ -211,6 +211,8 @@ export type ImplementationJob = {
   commitSha?: string;
   prUrl?: string;
   prNumber?: number;
+  changedFiles?: string[];
+  codegenSummary?: string;
   idempotencyKey: string; // hash of workspaceId+runId, prevents duplicates
   approvedByUserId: string;
   approvedAt: string;
