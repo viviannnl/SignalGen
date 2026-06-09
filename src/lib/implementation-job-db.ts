@@ -19,6 +19,8 @@ type ImplementationJobUpdate = Partial<
     | "logs"
     | "attempts"
     | "lastAttemptAt"
+    | "changedFiles"
+    | "codegenSummary"
     | "updatedAt"
   >
 >;
