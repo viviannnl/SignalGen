@@ -4,6 +4,7 @@ import { getApiAuthContextOrResponse } from "../../../../../lib/api-auth";
 
 import { writeAuditLog } from "@/lib/audit-log-db";
 import { findGitHubInstallationByWorkspace } from "@/lib/github-installation-db";
+import { capabilitiesFromInstallationPermissions, getInstallationPermissions } from "@/lib/github-client";
 import { findRepoConnectionById, updateRepoConnection } from "@/lib/repo-connection-db";
 import type { AuditLog, RepoConnection } from "@/lib/types";
 
@@ -21,6 +22,10 @@ function isNonEmptyString(value: unknown): value is string {
 
 function logSelectRepoError(message: string, error: unknown) {
   console.error(message, { errorName: error instanceof Error ? error.name : typeof error });
+}
+
+function permissionVerificationDisabledReason(): string {
+  return "GitHub App write permission could not be verified for PR creation.";
 }
 
 async function safeWriteAuditLog(entry: Omit<AuditLog, "_id">): Promise<void> {
@@ -71,12 +76,26 @@ export async function PATCH(
     }
 
     const now = new Date().toISOString();
+    let capabilities = { pr_creation: false, branch_push: false, issue_creation: false };
+    let disabledReason: string | undefined = permissionVerificationDisabledReason();
+    try {
+      capabilities = capabilitiesFromInstallationPermissions(await getInstallationPermissions(installation.installationId));
+      disabledReason = capabilities.pr_creation ? undefined : permissionVerificationDisabledReason();
+    } catch (error) {
+      console.warn("Repo connection permission verification failed; connecting with disabled capabilities", {
+        connectionId,
+        errorName: error instanceof Error ? error.name : typeof error,
+      });
+    }
+
     const updated = await updateRepoConnection(connectionId, {
       owner: owner.trim(),
       repo: repo.trim(),
       defaultBranch: defaultBranch.trim(),
       installationId: installation.installationId,
+      capabilities,
       status: "connected",
+      disabledReason,
       updatedAt: now,
     });
 
@@ -90,7 +109,7 @@ export async function PATCH(
       action: "repo_connection.updated",
       resourceType: "repo_connection",
       resourceId: connectionId,
-      detail: { owner: updated.owner, repo: updated.repo, status: updated.status },
+      detail: { owner: updated.owner, repo: updated.repo, status: updated.status, capabilities: updated.capabilities },
       createdAt: updated.updatedAt,
     });
 

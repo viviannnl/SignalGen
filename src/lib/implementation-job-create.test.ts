@@ -81,6 +81,9 @@ describe("createImplementationJobForRun", () => {
     });
 
     expect(result.status).toBe("created");
+    if (result.status !== "created") {
+      throw new Error("expected created result");
+    }
     expect(result.job).toBe(job);
     expect(mockFindRepoConnectionById).toHaveBeenCalledWith(REPO_CONNECTION_ID);
     expect(mockFindImplementationJobByIdempotencyKey).toHaveBeenCalledWith(`ws-test:${RUN_ID}`, "ws-test");
@@ -121,6 +124,9 @@ describe("createImplementationJobForRun", () => {
     });
 
     expect(result.status).toBe("duplicate");
+    if (result.status !== "duplicate") {
+      throw new Error("expected duplicate result");
+    }
     expect(result.job).toBe(existing);
     expect(mockCreateImplementationJob).not.toHaveBeenCalled();
     expect(mockWriteAuditLog).not.toHaveBeenCalled();
@@ -138,6 +144,9 @@ describe("createImplementationJobForRun", () => {
     });
 
     expect(result.status).toBe("repo_not_connected");
+    if (result.status !== "repo_not_connected") {
+      throw new Error("expected repo_not_connected result");
+    }
     expect(result.error).toBe("Repo connection is not connected.");
     expect(mockCreateImplementationJob).not.toHaveBeenCalled();
   });

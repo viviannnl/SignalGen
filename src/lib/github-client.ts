@@ -22,9 +22,22 @@ export interface GitHubClient {
     head: string;
     base: string;
   }): Promise<{ prUrl: string; prNumber: number }>;
+  getFileContents(params: {
+    owner: string;
+    repo: string;
+    path: string;
+    ref?: string;
+  }): Promise<{ path: string; content: string; sha: string } | null>;
+  listFiles(params: { owner: string; repo: string; ref: string }): Promise<string[]>;
 }
 
 type FetchLike = typeof fetch;
+
+export type GitHubInstallationPermissions = Record<string, "read" | "write" | "admin" | string | undefined>;
+
+function isGitHubNotFound(error: unknown): boolean {
+  return error instanceof Error && error.name === "GitHubAPIError" && (error as Error & { status?: number }).status === 404;
+}
 
 function base64url(input: string | Buffer): string {
   return Buffer.from(input).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -90,6 +103,17 @@ async function githubJson<T>(fetchImpl: FetchLike, url: string, init: RequestIni
 
 export class MockGitHubClient implements GitHubClient {
   calls: Array<{ method: string; params: unknown }> = [];
+  private readonly files: Record<string, { path: string; content: string; sha: string }>;
+  private readonly fileLists: Record<string, string[]>;
+
+  constructor(fixtures: { files?: Record<string, { path: string; content: string; sha: string }>; fileLists?: Record<string, string[]> } = {}) {
+    this.files = fixtures.files ?? {};
+    this.fileLists = fixtures.fileLists ?? {};
+  }
+
+  private fixtureKey(owner: string, repo: string, ref: string | undefined, path?: string): string {
+    return [owner, repo, ref ?? "HEAD", path].filter(Boolean).join("/");
+  }
 
   async createBranch(params: {
     owner: string;
@@ -125,6 +149,21 @@ export class MockGitHubClient implements GitHubClient {
       prUrl: `https://github.com/${params.owner}/${params.repo}/pull/1`,
       prNumber: 1,
     };
+  }
+
+  async getFileContents(params: {
+    owner: string;
+    repo: string;
+    path: string;
+    ref?: string;
+  }): Promise<{ path: string; content: string; sha: string } | null> {
+    this.calls.push({ method: "getFileContents", params });
+    return this.files[this.fixtureKey(params.owner, params.repo, params.ref, params.path)] ?? null;
+  }
+
+  async listFiles(params: { owner: string; repo: string; ref: string }): Promise<string[]> {
+    this.calls.push({ method: "listFiles", params });
+    return [...(this.fileLists[this.fixtureKey(params.owner, params.repo, params.ref)] ?? [])];
   }
 }
 
@@ -163,7 +202,7 @@ export class RealGitHubClient implements GitHubClient {
       );
       return { sha: existing.object.sha };
     } catch (error) {
-      if (!(error instanceof Error) || error.name !== "GitHubAPIError" || (error as Error & { status?: number }).status !== 404) {
+      if (!isGitHubNotFound(error)) {
         throw error;
       }
     }
@@ -214,7 +253,7 @@ export class RealGitHubClient implements GitHubClient {
         );
         existingSha = existing.sha;
       } catch (error) {
-        if (!(error instanceof Error) || error.name !== "GitHubAPIError" || (error as Error & { status?: number }).status !== 404) {
+        if (!isGitHubNotFound(error)) {
           throw error;
         }
       }
@@ -274,6 +313,70 @@ export class RealGitHubClient implements GitHubClient {
 
     return { prUrl: pr.html_url, prNumber: pr.number };
   }
+
+  async getFileContents(params: {
+    owner: string;
+    repo: string;
+    path: string;
+    ref?: string;
+  }): Promise<{ path: string; content: string; sha: string } | null> {
+    const encodedPath = encodeGitHubPath(params.path);
+    const refQuery = params.ref ? `?ref=${encodeURIComponent(params.ref)}` : "";
+    try {
+      const file = await githubJson<{ path?: string; content?: string; encoding?: string; sha?: string }>(
+        this.fetchImpl,
+        `https://api.github.com/repos/${params.owner}/${params.repo}/contents/${encodedPath}${refQuery}`,
+        { method: "GET", headers: this.authHeaders() },
+      );
+      return {
+        path: file.path ?? params.path,
+        content: Buffer.from((file.content ?? "").replace(/\n/g, ""), "base64").toString("utf8"),
+        sha: file.sha ?? "",
+      };
+    } catch (error) {
+      if (isGitHubNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async listFiles(params: { owner: string; repo: string; ref: string }): Promise<string[]> {
+    const tree = await githubJson<{ tree?: Array<{ path?: string; type?: string }>; truncated?: boolean }>(
+      this.fetchImpl,
+      `https://api.github.com/repos/${params.owner}/${params.repo}/git/trees/${encodeURIComponent(params.ref)}?recursive=1`,
+      { method: "GET", headers: this.authHeaders() },
+    );
+    return (tree.tree ?? [])
+      .filter((entry) => entry.type === "blob" && typeof entry.path === "string")
+      .map((entry) => entry.path as string);
+  }
+}
+
+export function capabilitiesFromInstallationPermissions(permissions: GitHubInstallationPermissions): {
+  pr_creation: boolean;
+  branch_push: boolean;
+  issue_creation: boolean;
+} {
+  return {
+    pr_creation: permissions.pull_requests === "write" && permissions.contents === "write",
+    branch_push: permissions.contents === "write",
+    issue_creation: permissions.issues === "write",
+  };
+}
+
+export async function getInstallationPermissions(
+  installationId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<GitHubInstallationPermissions> {
+  const appJwt = createGitHubAppJwt();
+  const installation = await githubJson<{ permissions?: GitHubInstallationPermissions }>(
+    fetchImpl,
+    `https://api.github.com/app/installations/${encodeURIComponent(installationId)}`,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${appJwt}` },
+    },
+  );
+  return installation.permissions ?? {};
 }
 
 export async function createGitHubInstallationToken(

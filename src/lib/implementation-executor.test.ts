@@ -83,6 +83,8 @@ function makeThrowingClient(errorName: string): GitHubClient {
     },
     createCommit: async () => ({ sha: "sha" }),
     openDraftPr: async () => ({ prUrl: "https://github.com/x/y/pull/1", prNumber: 1 }),
+    getFileContents: async () => null,
+    listFiles: async () => [],
   };
 }
 
